@@ -26,6 +26,8 @@
 namespace Slic3r {
 namespace Algorithm {
 
+static constexpr const double PI = 3.14159265358979323846;
+
 // Calculating radius discretization according to ClipperLib offsetter code, see void ClipperOffset::DoOffset(double delta)
 inline double clipper_round_offset_error(double offset, double arc_tolerance)
 {
@@ -36,8 +38,8 @@ inline double clipper_round_offset_error(double offset, double arc_tolerance)
             arc_tolerance > offset * def_arc_tolerance ?
                 offset * def_arc_tolerance :
                 arc_tolerance;
-    double steps = std::min(M_PI / std::acos(1. - y / offset), offset * M_PI);
-    return offset * (1. - cos(M_PI / steps));
+    double steps = std::min(PI / std::acos(1. - y / offset), offset * PI);
+    return offset * (1. - cos(PI / steps));
 }
 
 RegionExpansionParameters RegionExpansionParameters::build(
