@@ -24,6 +24,7 @@ class SLAPrinterConfig;
 class SLAArchiveWriter {
 protected:
     std::vector<sla::EncodedRaster> m_layers;
+    std::vector<sla::EncodedRaster> m_png_layers;  // PNG versions for debug export
 
     virtual std::unique_ptr<sla::RasterBase> create_raster() const = 0;
     virtual sla::RasterEncoder get_encoder() const = 0;
@@ -40,6 +41,7 @@ public:
         const EP & ep       = {})
     {
         m_layers.resize(layer_num);
+        m_png_layers.resize(layer_num);  // Also allocate space for PNG versions
         execution::for_each(
             ep, size_t(0), m_layers.size(),
             [this, &drawfn, &cancelfn](size_t idx) {
@@ -49,6 +51,9 @@ public:
                 auto                rst = create_raster();
                 drawfn(*rst, idx);
                 enc = rst->encode(get_encoder());
+
+                // Also create PNG version for debug export
+                m_png_layers[idx] = rst->encode(sla::PNGRasterEncoder{});
             },
             execution::max_concurrency(ep));
     }
@@ -58,6 +63,9 @@ public:
                               const SLAPrint       &print,
                               const ThumbnailsList &thumbnails,
                               const std::string    &projectname = "") = 0;
+
+    // Export all rasterized layers as PNG images to output directory
+    void export_layers_as_png(const std::string &output_dir) const;
 
     // Factory method to create an archiver instance
     static std::unique_ptr<SLAArchiveWriter> create(

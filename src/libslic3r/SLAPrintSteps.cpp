@@ -38,6 +38,8 @@
 
 #include <boost/log/trivial.hpp>
 
+#include <filesystem>
+
 #include "I18N.hpp"
 #include "format.hpp"
 #include "libslic3r/BoundingBox.hpp"
@@ -1502,6 +1504,31 @@ void SLAPrint::Steps::rasterize()
     // Print all the layers in parallel
     m_print->m_archiver->draw_layers(m_print->m_printer_input.size(), lvlfn,
                                     [this]() { return canceled(); }, ex_tbb);
+
+    // ===== PNG EXPORT DEBUG FUNCTIONALITY =====
+    // Export all rasterized layers as PNG images to /3DPrinter/output folder
+    // This allows visual inspection of each layer before sending to DLP printer
+    try {
+        // Use absolute path to ensure we write to /3DPrinter/output
+        // Try multiple possible locations for the output directory
+        std::filesystem::path output_dir;
+
+        // Method 1: Try /3DPrinter/output (if running from /3DPrinter subdirectory)
+        std::filesystem::path test_path = "/3DPrinter/output";
+        if (std::filesystem::exists("/3DPrinter") || true) {  // Create if doesn't exist
+            output_dir = test_path;
+        }
+
+        // Create output directory if it doesn't exist
+        std::filesystem::create_directories(output_dir);
+
+        // Export layers using the archiver's export method
+        m_print->m_archiver->export_layers_as_png(output_dir.string());
+
+        BOOST_LOG_TRIVIAL(info) << "PNG layers exported to: " << output_dir.string();
+    } catch (const std::exception& e) {
+        BOOST_LOG_TRIVIAL(warning) << "PNG layer export failed: " << e.what();
+    }
 }
 
 std::string SLAPrint::Steps::label(SLAPrintObjectStep step)

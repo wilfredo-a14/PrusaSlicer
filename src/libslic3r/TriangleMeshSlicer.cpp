@@ -2128,22 +2128,33 @@ ColorPolygons slice_mesh(
 }
 
 std::vector<ExPolygons> slice_mesh_ex(
-    const indexed_triangle_set       &mesh,
-    const std::vector<float>         &zs,
-    const MeshSlicingParamsEx        &params,
-    std::function<void()>             throw_on_cancel)
+    const indexed_triangle_set       &mesh,           // Input: 3D triangle mesh (vertices + indices)
+    const std::vector<float>         &zs,             // Input: Z-heights for slicing planes
+    const MeshSlicingParamsEx        &params,         // Input: slicing configuration (mode, closing radius, offset, resolution)
+    std::function<void()>             throw_on_cancel) // Input: cancellation callback
 {
+    // ===== STEP 1: BASIC 2D SLICING =====
+    // Slice the 3D mesh at all Z-heights to get basic 2D polygons (without holes filled)
+    // This produces raw contours from mesh intersections
     std::vector<Polygons> layers_p;
     {
         MeshSlicingParams slicing_params(params);
+        // Convert PositiveLargestContour mode to Positive for the base slicing
         if (params.mode == MeshSlicingParams::SlicingMode::PositiveLargestContour)
             slicing_params.mode = MeshSlicingParams::SlicingMode::Positive;
         if (params.mode_below == MeshSlicingParams::SlicingMode::PositiveLargestContour)
             slicing_params.mode_below = MeshSlicingParams::SlicingMode::Positive;
+        // slice_mesh() performs the actual mesh intersection with slicing planes
+        // Result: vector of Polygons (raw 2D contours) per layer
         layers_p = slice_mesh(mesh, zs, slicing_params, throw_on_cancel);
     }
-    
-//    BOOST_LOG_TRIVIAL(debug) << "slice_mesh make_expolygons in parallel - start";
+
+    // ===== STEP 2: CONVERT POLYGONS TO EXPOLYGONS (PARALLEL PROCESSING) =====
+    // Each layer is processed in parallel to:
+    // - Convert raw Polygons to ExPolygons (polygons with holes)
+    // - Apply morphological closing (fill small gaps)
+    // - Apply extra offset (expand/shrink the contours)
+    // - Simplify contours based on resolution
     std::vector<ExPolygons> layers(layers_p.size(), ExPolygons{});
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, layers_p.size()),
@@ -2153,56 +2164,52 @@ std::vector<ExPolygons> slice_mesh_ex(
             for (size_t layer_id = range.begin(); layer_id < range.end(); ++ layer_id) {
                 throw_on_cancel();
                 ExPolygons &expolygons = layers[layer_id];
-                const auto this_mode = layer_id < params.slicing_mode_normal_below_layer ? params.mode_below : params.mode;
-                Slic3r::make_expolygons(
-                    layers_p[layer_id], params.closing_radius, params.extra_offset,
-                    this_mode == MeshSlicingParams::SlicingMode::EvenOdd ? ClipperLib::pftEvenOdd : 
-                    this_mode == MeshSlicingParams::SlicingMode::PositiveLargestContour ? ClipperLib::pftPositive : ClipperLib::pftNonZero,
-                    &expolygons);
 
-#if 0
-//#ifndef NDEBUG
-                // Test whether the expolygons in a single layer overlap.
-                for (size_t i = 0; i < expolygons.size(); ++ i)
-                    for (size_t j = i + 1; j < expolygons.size(); ++ j) {
-                        Polygons overlap = intersection(expolygons[i], expolygons[j]);
-                        assert(overlap.empty());
-                    }
-#endif
-#if 0
-//#ifndef NDEBUG
-                for (const ExPolygon &ex : expolygons) {
-                    assert(! has_duplicate_points(ex.contour));
-                    for (const Polygon &hole : ex.holes)
-                        assert(! has_duplicate_points(hole));
-                    assert(! has_duplicate_points(ex));
-                }
-                assert(!has_duplicate_points(expolygons));
-#endif // NDEBUG
-                //FIXME simplify
+                // Determine which slicing mode to use for this layer
+                // Layers below slicing_mode_normal_below_layer use mode_below (vase mode)
+                // Layers above use the normal mode (FDM/SLA mode)
+                const auto this_mode = layer_id < params.slicing_mode_normal_below_layer ? params.mode_below : params.mode;
+
+                // Convert raw 2D Polygons to ExPolygons with the specified parameters:
+                // - closing_radius: morphological closing to fill small gaps
+                // - extra_offset: additional offset to expand/shrink contours
+                // - Clipping rule: determines how overlapping polygons are handled
+                //   - EvenOdd: alternating fill rule
+                //   - Positive: fill holes below largest boundary
+                //   - NonZero: standard non-zero winding rule
+                Slic3r::make_expolygons(
+                    layers_p[layer_id],                      // Input: raw 2D polygons from slicing
+                    params.closing_radius,                   // Morphological closing radius (fills small gaps)
+                    params.extra_offset,                     // Additional offset applied to contours
+                    this_mode == MeshSlicingParams::SlicingMode::EvenOdd ? ClipperLib::pftEvenOdd :
+                    this_mode == MeshSlicingParams::SlicingMode::PositiveLargestContour ? ClipperLib::pftPositive : ClipperLib::pftNonZero,
+                    &expolygons);                            // Output: ExPolygons (contours + holes)
+
+                // ===== STEP 3: POST-PROCESSING =====
+
+                // Optional: Filter to keep only the largest contour (vase mode)
+                // This ensures the model prints as a single wall shell
                 if (this_mode == MeshSlicingParams::SlicingMode::PositiveLargestContour)
                     keep_largest_contour_only(expolygons);
+
+                // Optional: Simplify contours to reduce polygon vertex count
+                // This reduces file size and slicing complexity
+                // resolution != 0 means simplification is enabled
                 if (resolution != 0.) {
                     ExPolygons simplified;
                     simplified.reserve(expolygons.size());
                     for (const ExPolygon &ex : expolygons)
+                        // ex.simplify() removes vertices that are too close together
+                        // based on the resolution threshold
                         append(simplified, ex.simplify(resolution));
                     expolygons = std::move(simplified);
                 }
-#if 0
-//#ifndef NDEBUG
-                for (const ExPolygon &ex : expolygons) {
-                    assert(! has_duplicate_points(ex.contour));
-                    for (const Polygon &hole : ex.holes)
-                        assert(! has_duplicate_points(hole));
-                    assert(! has_duplicate_points(ex));
-                }
-                assert(! has_duplicate_points(expolygons));
-#endif // NDEBUG
             }
         });
-//    BOOST_LOG_TRIVIAL(debug) << "slice_mesh make_expolygons in parallel - end";
 
+    // ===== OUTPUT =====
+    // Return all processed layers as ExPolygons (contours with holes)
+    // Each layer ready for rasterization to create 2D images
     return layers;
 }
 
