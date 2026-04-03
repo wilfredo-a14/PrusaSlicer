@@ -1505,48 +1505,46 @@ void SLAPrint::Steps::rasterize()
     m_print->m_archiver->draw_layers(m_print->m_printer_input.size(), lvlfn,
                                     [this]() { return canceled(); }, ex_tbb);
 
-    // ===== PNG EXPORT - Model-fitting rasterization =====
-    // Creates a second parallel rasterization pass where each layer's PNG
-    // is scaled to tightly fit the model, similar to how the MATLAB slicer works.
-    // This does NOT affect the native format output above.
+    // ===== PNG EXPORT - Fixed build area rasterization =====
+    // Uses fixed pixel dimensions from the printer's display (so scale doesn't
+    // change with model size), but centers the model in the image.
     try {
         namespace fs = std::filesystem;
         fs::path output_dir = "C:/3DPrinter/output";
         fs::create_directories(output_dir);
 
-        // Step 1: Compute XY bounding box of all layers
+        const auto &pcfg = m_print->m_printer_config;
+        double disp_w = pcfg.display_width.getFloat();   // mm
+        double disp_h = pcfg.display_height.getFloat();   // mm
+
+        const size_t target_w = 2560;
+        const size_t target_h = 1600;
+
+        // Fixed pixel dimensions from display size (scale doesn't change with model)
+        sla::Resolution res{target_w, target_h};
+        sla::PixelDim   pxdim{disp_w / target_w, disp_h / target_h};
+
+        // Compute model bounding box to find where it actually is in coord space
         BoundingBox bbox;
         for (const PrintLayer& pl : m_print->m_printer_input) {
-            for (const ExPolygon& poly : pl.transformed_slices()) {
+            for (const ExPolygon& poly : pl.transformed_slices())
                 bbox.merge(get_extents(poly));
-            }
         }
 
-        if (bbox.defined) {
-            // Step 2: Compute model-fitting raster parameters
-            const size_t target_w = 2560;
-            const size_t target_h = 1600;
+        if (!bbox.defined) goto png_export_done;
 
-            // Bounding box dimensions in mm (unscale from internal nanometer coords)
-            // Add 1% padding on each side so model doesn't touch image edges
-            coord_t pad_x = (bbox.max.x() - bbox.min.x()) / 100;
-            coord_t pad_y = (bbox.max.y() - bbox.min.y()) / 100;
+        {
+            // Center the model in the image:
+            // We want model_center to map to image_center (target_w/2, target_h/2)
+            // pixel = (model_coord + center) * SCALING_FACTOR / pxdim
+            // Solving: center = scaled(disp/2) - model_center
+            coord_t model_cx = (bbox.min.x() + bbox.max.x()) / 2;
+            coord_t model_cy = (bbox.min.y() + bbox.max.y()) / 2;
 
-            double bbox_w_mm = unscaled<double>(bbox.max.x() - bbox.min.x() + 2 * pad_x);
-            double bbox_h_mm = unscaled<double>(bbox.max.y() - bbox.min.y() + 2 * pad_y);
-
-            // Pixel dimensions: map the padded bounding box to fill the target resolution
-            sla::Resolution res{target_w, target_h};
-            sla::PixelDim   pxdim{bbox_w_mm / target_w, bbox_h_mm / target_h};
-
-            // AGGRaster::to_path() translates by center_x/center_y in model coords.
-            // We negate bbox.min so the model's min corner maps to pixel (0,0).
-            // Default Trafo() has mirror_y=true which flips Y for correct orientation.
             sla::RasterBase::Trafo tr;
-            tr.center_x = -(bbox.min.x() - pad_x);
-            tr.center_y = -(bbox.min.y() - pad_y);
+            tr.center_x = scaled(disp_w / 2.0) - model_cx;
+            tr.center_y = scaled(disp_h / 2.0) - model_cy;
 
-            // Step 3: Rasterize all layers in parallel with model-fitting dimensions
             size_t num_layers = m_print->m_printer_input.size();
             std::vector<sla::EncodedRaster> png_layers(num_layers);
 
@@ -1565,7 +1563,7 @@ void SLAPrint::Steps::rasterize()
                 },
                 execution::max_concurrency(ex_tbb));
 
-            // Step 4: Write PNG files to disk
+            // Write PNG files to disk
             for (size_t i = 0; i < num_layers; ++i) {
                 std::string filename = Slic3r::format("layer_%04d.png", i);
                 fs::path filepath = output_dir / filename;
@@ -1577,9 +1575,11 @@ void SLAPrint::Steps::rasterize()
             }
 
             BOOST_LOG_TRIVIAL(info) << "Exported " << num_layers
-                << " model-fitting PNG layers (" << target_w << "x" << target_h
+                << " PNG layers (" << target_w << "x" << target_h
+                << ", display " << disp_w << "x" << disp_h << "mm"
                 << ") to: " << output_dir.string();
         }
+        png_export_done:;
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(warning) << "PNG layer export failed: " << e.what();
     }
