@@ -1508,9 +1508,11 @@ void SLAPrint::Steps::rasterize()
     // ===== PNG EXPORT - Fixed build area rasterization =====
     // Uses fixed pixel dimensions from the printer's display (so scale doesn't
     // change with model size), but centers the model in the image.
+    // Only exports if user chose a directory via the folder picker.
+    if (!m_print->m_png_export_dir.empty()) {
     try {
         namespace fs = std::filesystem;
-        fs::path output_dir = "C:/3DPrinter/output";
+        fs::path output_dir = m_print->m_png_export_dir;
         fs::create_directories(output_dir);
 
         const auto &pcfg = m_print->m_printer_config;
@@ -1583,6 +1585,7 @@ void SLAPrint::Steps::rasterize()
     } catch (const std::exception& e) {
         BOOST_LOG_TRIVIAL(warning) << "PNG layer export failed: " << e.what();
     }
+    } // end if (!m_png_export_dir.empty())
 }
 
 std::string SLAPrint::Steps::label(SLAPrintObjectStep step)

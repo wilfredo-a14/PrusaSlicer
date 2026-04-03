@@ -6426,6 +6426,16 @@ void Plater::reslice()
         for (auto& object : model().objects)
             if (object->sla_points_status == sla::PointsStatus::NoPoints)
                 object->sla_points_status = sla::PointsStatus::Generating;
+
+        // Show folder picker for PNG layer export
+        wxDirDialog dlg(this, _L("Choose PNG layer export directory:"),
+                        "C:\\3DPrinter\\output",
+                        wxDD_DEFAULT_STYLE);
+        if (dlg.ShowModal() == wxID_OK) {
+            active_sla_print().set_png_export_dir(into_u8(dlg.GetPath()));
+        } else {
+            active_sla_print().set_png_export_dir("");
+        }
     }
 
     //FIXME Don't reslice if export of G-code or sending to OctoPrint is running.

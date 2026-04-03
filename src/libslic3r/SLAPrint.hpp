@@ -588,7 +588,9 @@ public:
                       const std::string    &projectname = "");
 
     static bool is_prusa_print(const std::string& printer_model);
-    
+
+    void set_png_export_dir(const std::string &dir) { m_png_export_dir = dir; }
+
 private:
     
     // Implement same logic as in SLAPrintObject
@@ -609,6 +611,9 @@ private:
     
     // The archive object which collects the raster images after slicing
     std::unique_ptr<SLAArchiveWriter>     m_archiver;
+
+    // PNG layer export directory (set by GUI before slicing)
+    std::string                     m_png_export_dir;
     
     // Estimated print time, material consumed.
     SLAPrintStatistics              m_print_statistics;
