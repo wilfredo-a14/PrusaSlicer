@@ -4813,6 +4813,13 @@ void PrintConfigDef::init_sla_params()
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionFloat(2.0));
 
+    def = this->add("corkscrew_enable", coBool);
+    def->label = L("Corkscrew mode");
+    def->category = L("Corkscrew");
+    def->tooltip = L("Enable corkscrew exposure mode.");
+    def->mode = comSimple;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("material_print_speed", coEnum);
     def->label = L("Print speed");
     def->tooltip = L(

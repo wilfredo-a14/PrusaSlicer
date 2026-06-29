@@ -20,6 +20,7 @@
 #include <libslic3r/ClipperUtils.hpp>
 #include <libslic3r/KDTreeIndirect.hpp>
 #include <chrono>
+#include <fstream>
 #include <algorithm>
 #include <array>
 #include <cmath>

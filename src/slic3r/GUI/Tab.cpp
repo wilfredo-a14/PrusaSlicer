@@ -6027,6 +6027,10 @@ void TabSLAPrint::build()
     optgroup->append_single_option_line("hollowing_quality");
     optgroup->append_single_option_line("hollowing_closing_distance");
 
+    page = add_options_page(L("Corkscrew"), "wrench");
+    optgroup = page->new_optgroup(L("Corkscrew mode"));
+    optgroup->append_single_option_line("corkscrew_enable");
+
     page = add_options_page(L("Advanced"), "wrench");
     optgroup = page->new_optgroup(L("Slicing"));
     optgroup->append_single_option_line("slice_closing_radius");

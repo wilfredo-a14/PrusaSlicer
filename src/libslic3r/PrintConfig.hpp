@@ -1232,6 +1232,9 @@ PRINT_CONFIG_CLASS_DEFINE(
 
     // Indirectly controls the minimum size of created cavities.
     ((ConfigOptionFloat, hollowing_closing_distance))
+
+    // Corkscrew exposure mode
+    ((ConfigOptionBool, corkscrew_enable))
 )
 
 enum SLAMaterialSpeed { slamsSlow, slamsFast, slamsHighViscosity };
