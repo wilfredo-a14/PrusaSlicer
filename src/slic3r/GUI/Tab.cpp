@@ -30,6 +30,7 @@
 #include "libslic3r/GCode/GCodeWriter.hpp"
 #include "libslic3r/GCode/Thumbnails.hpp"
 #include "libslic3r/CustomParametersHandling.hpp"
+#include "libslic3r/DLPDebugLog.hpp"
 
 #include "slic3r/Utils/Http.hpp"
 #include "slic3r/Utils/PrintHost.hpp"
@@ -56,6 +57,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/exception/diagnostic_information.hpp>
+#include <boost/log/trivial.hpp>
 
 #include "wxExtensions.hpp"
 #include "PresetComboBoxes.hpp"
@@ -186,8 +188,6 @@ void Tab::create_preset_tab()
     add_scaled_button(panel, &m_btn_save_preset, "save");
     add_scaled_button(panel, &m_btn_rename_preset, "edit");
     add_scaled_button(panel, &m_btn_delete_preset, "cross");
-    if (m_type == Preset::Type::TYPE_PRINTER)
-        add_scaled_button(panel, &m_btn_edit_ph_printer, "cog");
 
     m_show_incompatible_presets = false;
 
@@ -249,10 +249,6 @@ void Tab::create_preset_tab()
     m_h_buttons_sizer->Add(m_btn_rename_preset, 0, wxALIGN_CENTER_VERTICAL);
     m_h_buttons_sizer->AddSpacer(int(4 * scale_factor));
     m_h_buttons_sizer->Add(m_btn_delete_preset, 0, wxALIGN_CENTER_VERTICAL);
-    if (m_btn_edit_ph_printer) {
-        m_h_buttons_sizer->AddSpacer(int(4 * scale_factor));
-        m_h_buttons_sizer->Add(m_btn_edit_ph_printer, 0, wxALIGN_CENTER_VERTICAL);
-    }
     m_h_buttons_sizer->AddSpacer(int(/*16*/8 * scale_factor));
     m_h_buttons_sizer->Add(m_btn_hide_incompatible_presets, 0, wxALIGN_CENTER_VERTICAL);
     m_h_buttons_sizer->AddSpacer(int(8 * scale_factor));
@@ -338,14 +334,6 @@ void Tab::create_preset_tab()
     m_btn_hide_incompatible_presets->Bind(wxEVT_BUTTON, ([this](wxCommandEvent e) {
         toggle_show_hide_incompatible();
     }));
-
-    if (m_btn_edit_ph_printer)
-        m_btn_edit_ph_printer->Bind(wxEVT_BUTTON, [this](wxCommandEvent e) {
-            if (m_preset_bundle->physical_printers.has_selection())
-                m_presets_choice->edit_physical_printer();
-            else
-                m_presets_choice->add_physical_printer();
-        });
 
     // Initialize the DynamicPrintConfig by default keys/values.
     build();
@@ -1113,6 +1101,16 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     if (! is_fff && (opt_key == "pad_enable" || opt_key == "pad_around_object"))
         og_freq_chng_params->set_value("pad", pad_combo_value_for_config(*m_config));
 
+    if (! is_fff && (opt_key == "corkscrew_enable" || opt_key == "corkscrew_box_count")) {
+        dlp::debug_log(Slic3r::format(
+            "GUI: corkscrew setting changed: %1%=%2%",
+            opt_key,
+            opt_key == "corkscrew_enable"
+                ? (m_config->opt_bool("corkscrew_enable") ? "true" : "false")
+                : std::to_string(m_config->opt_int("corkscrew_box_count"))));
+        BOOST_LOG_TRIVIAL(debug) << "DLP GUI: " << opt_key << " changed";
+    }
+
     if (opt_key == "brim_width")
     {
         bool val = m_config->opt_float("brim_width") > 0.0 ? true : false;
@@ -1503,106 +1501,11 @@ void TabPrint::build()
         optgroup->append_single_option_line("top_one_perimeter_type", category_path + "top-one-perimeter-type");
         optgroup->append_single_option_line("only_one_perimeter_first_layer", category_path + "only-one-perimeter-first-layer");
 
-    page = add_options_page(L("Infill"), "infill");
-        category_path = "infill_42#";
-        optgroup = page->new_optgroup(L("Infill"));
-        optgroup->append_single_option_line("fill_density", category_path + "fill-density");
-        optgroup->append_single_option_line("fill_pattern", category_path + "fill-pattern");
-        optgroup->append_single_option_line("infill_anchor", category_path + "fill-pattern");
-        optgroup->append_single_option_line("infill_anchor_max", category_path + "fill-pattern");
-        optgroup->append_single_option_line("top_fill_pattern", category_path + "top-fill-pattern");
-        optgroup->append_single_option_line("bottom_fill_pattern", category_path + "bottom-fill-pattern");
-
-        optgroup = page->new_optgroup(L("Ironing"));
-        category_path = "ironing_177488#";
-        optgroup->append_single_option_line("ironing", category_path);
-        optgroup->append_single_option_line("ironing_type", category_path + "ironing-type");
-        optgroup->append_single_option_line("ironing_flowrate", category_path + "flow-rate");
-        optgroup->append_single_option_line("ironing_spacing", category_path + "spacing-between-ironing-passes");
-
-        optgroup = page->new_optgroup(L("Reducing printing time"));
-        category_path = "infill_42#";
-        optgroup->append_single_option_line("automatic_infill_combination");
-        optgroup->append_single_option_line("automatic_infill_combination_max_layer_height");
-        optgroup->append_single_option_line("infill_every_layers", category_path + "combine-infill-every-x-layers");
-
-        optgroup = page->new_optgroup(L("Advanced"));
-        optgroup->append_single_option_line("solid_infill_every_layers", category_path + "solid-infill-every-x-layers");
-        optgroup->append_single_option_line("fill_angle", category_path + "fill-angle");
-        optgroup->append_single_option_line("solid_infill_below_area", category_path + "solid-infill-threshold-area");
-        optgroup->append_single_option_line("bridge_angle");
-        optgroup->append_single_option_line("only_retract_when_crossing_perimeters");
-        optgroup->append_single_option_line("infill_first");
-
-    page = add_options_page(L("Skirt and brim"), "skirt+brim");
-        category_path = "skirt-and-brim_133969#";
-        optgroup = page->new_optgroup(L("Skirt"));
-        optgroup->append_single_option_line("skirts", category_path + "skirt");
-        optgroup->append_single_option_line("skirt_distance", category_path + "skirt");
-        optgroup->append_single_option_line("skirt_height", category_path + "skirt");
-        optgroup->append_single_option_line("draft_shield", category_path + "skirt");
-        optgroup->append_single_option_line("min_skirt_length", category_path + "skirt");
-
-        optgroup = page->new_optgroup(L("Brim"));
-        optgroup->append_single_option_line("brim_type", category_path + "brim");
-        optgroup->append_single_option_line("brim_width", category_path + "brim");
-        optgroup->append_single_option_line("brim_separation", category_path + "brim");
-
-    page = add_options_page(L("Support material"), "support");
-        category_path = "support-material_1698#";
-        optgroup = page->new_optgroup(L("Support material"));
-        optgroup->append_single_option_line("support_material", category_path + "generate-support-material");
-        optgroup->append_single_option_line("support_material_auto", category_path + "auto-generated-supports");
-        optgroup->append_single_option_line("support_material_threshold", category_path + "overhang-threshold");
-        optgroup->append_single_option_line("support_material_enforce_layers", category_path + "enforce-support-for-the-first");
-        optgroup->append_single_option_line("raft_first_layer_density", category_path + "raft-first-layer-density");
-        optgroup->append_single_option_line("raft_first_layer_expansion", category_path + "raft-first-layer-expansion");
-
-        optgroup = page->new_optgroup(L("Raft"));
-        optgroup->append_single_option_line("raft_layers", category_path + "raft-layers");
-        optgroup->append_single_option_line("raft_contact_distance", category_path + "raft-layers");
-        optgroup->append_single_option_line("raft_expansion");
-
-        optgroup = page->new_optgroup(L("Options for support material and raft"));
-        optgroup->append_single_option_line("support_material_style", category_path + "style");
-        optgroup->append_single_option_line("support_material_contact_distance", category_path + "contact-z-distance");
-        optgroup->append_single_option_line("support_material_bottom_contact_distance", category_path + "contact-z-distance");
-        optgroup->append_single_option_line("support_material_pattern", category_path + "pattern");
-        optgroup->append_single_option_line("support_material_with_sheath", category_path + "with-sheath-around-the-support");
-        optgroup->append_single_option_line("support_material_spacing", category_path + "pattern-spacing-0-inf");
-        optgroup->append_single_option_line("support_material_angle", category_path + "pattern-angle");
-        optgroup->append_single_option_line("support_material_closing_radius", category_path + "pattern-angle");
-        optgroup->append_single_option_line("support_material_interface_layers", category_path + "interface-layers");
-        optgroup->append_single_option_line("support_material_bottom_interface_layers", category_path + "interface-layers");
-        optgroup->append_single_option_line("support_material_interface_pattern", category_path + "interface-pattern");
-        optgroup->append_single_option_line("support_material_interface_spacing", category_path + "interface-pattern-spacing");
-        optgroup->append_single_option_line("support_material_interface_contact_loops", category_path + "interface-loops");
-        optgroup->append_single_option_line("support_material_buildplate_only", category_path + "support-on-build-plate-only");
-        optgroup->append_single_option_line("support_material_xy_spacing", category_path + "xy-separation-between-an-object-and-its-support");
-        optgroup->append_single_option_line("dont_support_bridges", category_path + "dont-support-bridges");
-        optgroup->append_single_option_line("support_material_synchronize_layers", category_path + "synchronize-with-object-layers");
-
-        optgroup = page->new_optgroup(L("Organic supports"));
-        const std::string path = "organic-supports_480131#organic-supports-settings";
-        optgroup->append_single_option_line("support_tree_angle", path);
-        optgroup->append_single_option_line("support_tree_angle_slow", path);
-        optgroup->append_single_option_line("support_tree_branch_diameter", path);
-        optgroup->append_single_option_line("support_tree_branch_diameter_angle", path);
-        optgroup->append_single_option_line("support_tree_branch_diameter_double_wall", path);
-        optgroup->append_single_option_line("support_tree_tip_diameter", path);
-        optgroup->append_single_option_line("support_tree_branch_distance", path);
-        optgroup->append_single_option_line("support_tree_top_rate", path);
-
     page = add_options_page(L("Speed"), "time");
         optgroup = page->new_optgroup(L("Speed for print moves"));
         optgroup->append_single_option_line("perimeter_speed");
         optgroup->append_single_option_line("small_perimeter_speed");
         optgroup->append_single_option_line("external_perimeter_speed");
-        optgroup->append_single_option_line("infill_speed");
-        optgroup->append_single_option_line("solid_infill_speed");
-        optgroup->append_single_option_line("top_solid_infill_speed");
-        optgroup->append_single_option_line("support_material_speed");
-        optgroup->append_single_option_line("support_material_interface_speed");
         optgroup->append_single_option_line("bridge_speed");
         optgroup->append_single_option_line("over_bridge_speed");
         optgroup->append_single_option_line("gap_fill_speed");
@@ -1621,15 +1524,11 @@ void TabPrint::build()
 
         optgroup = page->new_optgroup(L("Modifiers"));
         optgroup->append_single_option_line("first_layer_speed");
-        optgroup->append_single_option_line("first_layer_infill_speed");
         optgroup->append_single_option_line("first_layer_speed_over_raft");
 
         optgroup = page->new_optgroup(L("Acceleration control (advanced)"));
         optgroup->append_single_option_line("external_perimeter_acceleration");
         optgroup->append_single_option_line("perimeter_acceleration");
-        optgroup->append_single_option_line("top_solid_infill_acceleration");
-        optgroup->append_single_option_line("solid_infill_acceleration");
-        optgroup->append_single_option_line("infill_acceleration");
         optgroup->append_single_option_line("bridge_acceleration");
         optgroup->append_single_option_line("first_layer_acceleration");
         optgroup->append_single_option_line("first_layer_acceleration_over_raft");
@@ -1649,10 +1548,6 @@ void TabPrint::build()
     page = add_options_page(L("Multiple Extruders"), "funnel");
         optgroup = page->new_optgroup(L("Extruders"));
         optgroup->append_single_option_line("perimeter_extruder");
-        optgroup->append_single_option_line("infill_extruder");
-        optgroup->append_single_option_line("solid_infill_extruder");
-        optgroup->append_single_option_line("support_material_extruder");
-        optgroup->append_single_option_line("support_material_interface_extruder");
         optgroup->append_single_option_line("wipe_tower_extruder");
         optgroup->append_single_option_line("bed_temperature_extruder");
 
@@ -1689,14 +1584,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("first_layer_extrusion_width");
         optgroup->append_single_option_line("perimeter_extrusion_width");
         optgroup->append_single_option_line("external_perimeter_extrusion_width");
-        optgroup->append_single_option_line("infill_extrusion_width");
-        optgroup->append_single_option_line("solid_infill_extrusion_width");
-        optgroup->append_single_option_line("top_infill_extrusion_width");
-        optgroup->append_single_option_line("support_material_extrusion_width");
         optgroup->append_single_option_line("automatic_extrusion_widths");
-
-        optgroup = page->new_optgroup(L("Overlap"));
-        optgroup->append_single_option_line("infill_overlap");
 
         optgroup = page->new_optgroup(L("Flow"));
         optgroup->append_single_option_line("bridge_flow_ratio");
@@ -2632,8 +2520,12 @@ void TabPrinter::build()
     // For DiffPresetDialog we use options list which is saved in Searcher class.
     // Options for the Searcher is added in the moment of pages creation.
     // So, build first of all printer pages for non-selected printer technology...
-    std::string def_preset_name = "- default " + std::string(m_printer_technology == ptSLA ? "FFF" : "SLA") + " -";
-    m_config = &m_presets->find_preset(def_preset_name)->config;
+    const char *other_technology_preset =
+        m_printer_technology == ptSLA ? "- default FFF -" : "- default DLP -";
+    Preset *other_preset = m_presets->find_preset(other_technology_preset);
+    if (!other_preset)
+        throw Slic3r::RuntimeError(format("Missing printer preset \"%1%\"", other_technology_preset));
+    m_config = &other_preset->config;
     m_printer_technology == ptSLA ? build_fff() : build_sla();
     if (m_printer_technology == ptSLA)
         m_extruders_count_old = 0;// revert this value 
@@ -2647,12 +2539,7 @@ void TabPrinter::build_print_host_upload_group(Page* page)
 {
     ConfigOptionsGroupShp optgroup = page->new_optgroup(L("Print Host upload"));
 
-    wxString description_line_text = _L(""
-        "Note: All parameters from this group are moved to the Physical Printer settings (see changelog).\n\n"
-        "A new Physical Printer profile is created by clicking on the \"cog\" icon right of the Printer profiles combo box, "
-        "by selecting the \"Add physical printer\" item in the Printer combo box. The Physical Printer profile editor opens "
-        "also when clicking on the \"cog\" icon in the Printer settings tab. The Physical Printer profiles are being stored "
-        "into PrusaSlicer/physical_printer directory.");
+    wxString description_line_text = _L("Print host upload settings are not exposed in this build.");
 
     Line line = { "", "" };
     line.full_width = 1;
@@ -3777,8 +3664,6 @@ void Tab::load_current_preset()
             on_preset_loaded();
         else
             wxGetApp().sidebar().update_objects_list_extruder_column(1);
-        // Check and show "Physical printer" page if needed
-        wxGetApp().show_printer_webview_tab();
     }
     // Reload preset pages with the new configuration values.
     reload_config();
@@ -3887,18 +3772,12 @@ void Tab::rebuild_page_tree()
 
 void Tab::update_btns_enabling()
 {
-    // we can delete any preset from the physical printer
-    // and any user preset
     const Preset& preset = m_presets->get_edited_preset();
-    const bool is_printer_and_selected_physical = m_type == Preset::TYPE_PRINTER && m_preset_bundle->physical_printers.has_selection();
 
-    m_btn_delete_preset->Show(is_printer_and_selected_physical || (!preset.is_default && !preset.is_system));
+    m_btn_delete_preset->Show(!preset.is_default && !preset.is_system);
 
-    m_btn_rename_preset->Show(!is_printer_and_selected_physical && !preset.is_default && !preset.is_system && !preset.is_external);
+    m_btn_rename_preset->Show(!preset.is_default && !preset.is_system && !preset.is_external);
 
-    if (m_btn_edit_ph_printer)
-        m_btn_edit_ph_printer->SetToolTip( m_preset_bundle->physical_printers.has_selection() ?
-                                           _L("Edit physical printer") : _L("Add physical printer"));
     m_h_buttons_sizer->Layout();
 }
 
@@ -4032,12 +3911,9 @@ bool Tab::select_preset(std::string preset_name, bool delete_current /*=false*/,
         if (m_type == Preset::TYPE_PRINTER) {
             if (!last_selected_ph_printer_name.empty() &&
                 m_presets->get_edited_preset().name == PhysicalPrinter::get_preset_name(last_selected_ph_printer_name)) {
-                // If preset selection was canceled and previously was selected physical printer, we should select it back
                 m_preset_bundle->physical_printers.select_printer(last_selected_ph_printer_name);
             }
             else if (m_preset_bundle->physical_printers.has_selection()) {
-                // If preset selection was canceled and physical printer was selected
-                // we must disable selection marker for the physical printers
                 m_preset_bundle->physical_printers.unselect_printer();
             }
         }
@@ -4444,25 +4320,9 @@ void Tab::rename_preset()
     if (m_presets_choice->is_selected_physical_printer())
         return;
 
-    wxString msg;
-
-    if (m_type == Preset::TYPE_PRINTER && !m_preset_bundle->physical_printers.empty()) {
-        // Check preset for rename in physical printers
-        std::vector<std::string> ph_printers = m_preset_bundle->physical_printers.get_printers_with_preset(m_presets->get_selected_preset().name);
-        if (!ph_printers.empty()) {
-            msg += _L_PLURAL("The physical printer below is based on the preset, you are going to rename.",
-                "The physical printers below are based on the preset, you are going to rename.", ph_printers.size());
-            for (const std::string& printer : ph_printers)
-                msg += "\n    \"" + from_u8(printer) + "\",";
-            msg.RemoveLast();
-            msg += "\n" + _L_PLURAL("Note, that the selected preset will be renamed in this printer too.",
-                "Note, that the selected preset will be renamed in these printers too.", ph_printers.size()) + "\n\n";
-        }
-    }
-
     // get new name
 
-    SavePresetDialog dlg(m_parent, m_type, msg);
+    SavePresetDialog dlg(m_parent, m_type, wxString());
     if (dlg.ShowModal() != wxID_OK)
         return;
 
@@ -4500,10 +4360,6 @@ void Tab::rename_preset()
 
         filesystem::rename(old_file_name, selected_preset.file);
 
-        // rename selected preset in printers, if it's needed
-
-        if (!msg.IsEmpty())
-            m_preset_bundle->physical_printers.rename_preset_in_printers(old_name, new_name);
     }
     catch (const exception& ex) {
         const std::string exception = diagnostic_information(ex);
@@ -4534,55 +4390,7 @@ void Tab::delete_preset()
     // Don't let the user delete the ' - default - ' configuration.
     wxString action = current_preset.is_external ? _L("remove") : _L("delete");
 
-    PhysicalPrinterCollection& physical_printers = m_preset_bundle->physical_printers;
-    wxString msg;
-    if (m_presets_choice->is_selected_physical_printer())
-    {
-        PhysicalPrinter& printer = physical_printers.get_selected_printer();
-        if (printer.preset_names.size() == 1) {
-            if (m_presets_choice->del_physical_printer(_L("It's a last preset for this physical printer."))) {
-                // Hide "Physical printer" page
-                wxGetApp().show_printer_webview_tab();
-                Layout();
-            }
-            return;
-        }
-        
-        msg = format_wxstr(_L("Are you sure you want to delete \"%1%\" preset from the physical printer \"%2%\"?"), current_preset.name, printer.name);
-    }
-    else
-    {
-        if (m_type == Preset::TYPE_PRINTER && !physical_printers.empty())
-        {
-            // Check preset for delete in physical printers
-            // Ask a customer about next action, if there is a printer with just one preset and this preset is equal to delete
-            std::vector<std::string> ph_printers        = physical_printers.get_printers_with_preset(current_preset.name, false);
-            std::vector<std::string> ph_printers_only   = physical_printers.get_printers_with_only_preset(current_preset.name);
-
-            if (!ph_printers.empty()) {
-                msg += _L_PLURAL("The physical printer below is based on the preset, you are going to delete.", 
-                                 "The physical printers below are based on the preset, you are going to delete.", ph_printers.size());
-                for (const std::string& printer : ph_printers)
-                    msg += "\n    \"" + from_u8(printer) + "\",";
-                msg.RemoveLast();
-                msg += "\n" + _L_PLURAL("Note, that the selected preset will be deleted from this printer too.", 
-                                        "Note, that the selected preset will be deleted from these printers too.", ph_printers.size()) + "\n\n";
-            }
-
-            if (!ph_printers_only.empty()) {
-                msg += _L_PLURAL("The physical printer below is based only on the preset, you are going to delete.", 
-                                 "The physical printers below are based only on the preset, you are going to delete.", ph_printers_only.size());
-                for (const std::string& printer : ph_printers_only)
-                    msg += "\n    \"" + from_u8(printer) + "\",";
-                msg.RemoveLast();
-                msg += "\n" + _L_PLURAL("Note, that this printer will be deleted after deleting the selected preset.",
-                                        "Note, that these printers will be deleted after deleting the selected preset.", ph_printers_only.size()) + "\n\n";
-            }
-        }
-
-        // TRN "remove/delete"
-        msg += from_u8((boost::format(_u8L("Are you sure you want to %1% the selected preset?")) % action).str());
-    }
+    wxString msg = from_u8((boost::format(_u8L("Are you sure you want to %1% the selected preset?")) % action).str());
 
     action = current_preset.is_external ? _L("Remove") : _L("Delete");
     // TRN Settings Tabs: Button in toolbar: "Remove/Delete"
@@ -4591,23 +4399,6 @@ void Tab::delete_preset()
         //wxID_YES != wxMessageDialog(parent(), msg, title, wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION).ShowModal())
         wxID_YES != MessageDialog(parent(), msg, title, wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION).ShowModal())
         return;
-
-    // if we just delete preset from the physical printer
-    if (m_presets_choice->is_selected_physical_printer()) {
-        PhysicalPrinter& printer = physical_printers.get_selected_printer();
-
-        // just delete this preset from the current physical printer
-        printer.delete_preset(m_presets->get_edited_preset().name);
-        // select first from the possible presets for this printer
-        physical_printers.select_printer(printer);
-
-        this->select_preset(physical_printers.get_selected_printer_preset_name());
-        return;
-    }
-
-    // delete selected preset from printers and printer, if it's needed
-    if (m_type == Preset::TYPE_PRINTER && !physical_printers.empty())
-        physical_printers.delete_preset_from_printers(current_preset.name);
 
     // Select will handle of the preset dependencies, of saving & closing the depending profiles, and
     // finally of deleting the preset.
@@ -5990,46 +5781,7 @@ void TabSLAPrint::build()
     optgroup->append_single_option_line("layer_height");
     optgroup->append_single_option_line("faded_layers");
 
-    page = add_options_page(L("Supports"), "support"/*"sla_supports"*/);
-
-    optgroup = page->new_optgroup(L("Supports"));
-    optgroup->append_single_option_line("supports_enable");
-    optgroup->append_single_option_line("support_tree_type");
-    optgroup->append_single_option_line("support_enforcers_only");
-    
-    build_sla_support_params({{"", L("Default")}, {"branching", L("Branching")}}, page);
-
-    optgroup = page->new_optgroup(L("Automatic generation"));
-    optgroup->append_single_option_line("support_points_density_relative");
-
-    page = add_options_page(L("Pad"), "pad");
-    optgroup = page->new_optgroup(L("Pad"));
-    optgroup->append_single_option_line("pad_enable");
-    optgroup->append_single_option_line("pad_wall_thickness");
-    optgroup->append_single_option_line("pad_wall_height");
-    optgroup->append_single_option_line("pad_brim_size");
-    optgroup->append_single_option_line("pad_max_merge_distance");
-    // TODO: Disabling this parameter for the beta release
-//    optgroup->append_single_option_line("pad_edge_radius");
-    optgroup->append_single_option_line("pad_wall_slope");
-
-    optgroup->append_single_option_line("pad_around_object");
-    optgroup->append_single_option_line("pad_around_object_everywhere");
-    optgroup->append_single_option_line("pad_object_gap");
-    optgroup->append_single_option_line("pad_object_connector_stride");
-    optgroup->append_single_option_line("pad_object_connector_width");
-    optgroup->append_single_option_line("pad_object_connector_penetration");
-    
-    page = add_options_page(L("Hollowing"), "hollowing");
-    optgroup = page->new_optgroup(L("Hollowing"));
-    optgroup->append_single_option_line("hollowing_enable");
-    optgroup->append_single_option_line("hollowing_min_thickness");
-    optgroup->append_single_option_line("hollowing_quality");
-    optgroup->append_single_option_line("hollowing_closing_distance");
-
-    page = add_options_page(L("Corkscrew"), "wrench");
-    optgroup = page->new_optgroup(L("Corkscrew mode"));
-    optgroup->append_single_option_line("corkscrew_enable");
+    build_dlp_options_pages();
 
     page = add_options_page(L("Advanced"), "wrench");
     optgroup = page->new_optgroup(L("Slicing"));

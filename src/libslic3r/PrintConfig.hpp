@@ -54,6 +54,7 @@
 
 #include "libslic3r.h"
 #include "Config.hpp"
+#include "DLPConfig.hpp"
 #include "SLA/SupportTreeStrategies.hpp"
 #include "libslic3r/Point.hpp"
 
@@ -305,6 +306,7 @@ private:
     void init_sla_params();
     void init_sla_tilt_params();
     void init_sla_support_params(const std::string &method_prefix);
+    void init_dlp_params();
 
     std::vector<std::string>    m_extruder_option_keys;
     std::vector<std::string>    m_extruder_retract_keys;
@@ -1233,8 +1235,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     // Indirectly controls the minimum size of created cavities.
     ((ConfigOptionFloat, hollowing_closing_distance))
 
-    // Corkscrew exposure mode
-    ((ConfigOptionBool, corkscrew_enable))
+    DLP_PRINT_OBJECT_CONFIG_OPTIONS
 )
 
 enum SLAMaterialSpeed { slamsSlow, slamsFast, slamsHighViscosity };

@@ -1,6 +1,10 @@
 Build
 Build.bat
 /build/
+/.cache/
+/.clangd/
+/compile_commands.json
+/output/
 MYMETA.json
 MYMETA.yml
 _build
@@ -23,3 +27,22 @@ deps/build-linux/*
 CMakeUserPresets.json
 logs/
 *.log*
+
+# Accidental in-source CMake configuration.
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/install_manifest.txt
+/CTestTestfile.cmake
+
+# Local IDE and platform outputs not guaranteed to live under build/.
+/.vs/
+*.VC.db
+*.suo
+*.user
+*.dSYM/
+*.pdb
+*.ilk
+*.exp
+Thumbs.db
+Desktop.ini

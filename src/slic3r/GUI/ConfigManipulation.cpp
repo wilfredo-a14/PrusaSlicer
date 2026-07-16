@@ -499,6 +499,9 @@ void ConfigManipulation::toggle_print_sla_options(DynamicPrintConfig* config)
     toggle_field("pad_object_connector_stride", zero_elev);
     toggle_field("pad_object_connector_width", zero_elev);
     toggle_field("pad_object_connector_penetration", zero_elev);
+
+    bool corkscrew_en = config->opt_bool("corkscrew_enable");
+    toggle_field("corkscrew_box_count", corkscrew_en);
 }
 
 

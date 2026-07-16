@@ -18,6 +18,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "Plater.hpp"
+#include "DLPPlater.hpp"
 #include "slic3r/GUI/BitmapCache.hpp"
 #include "slic3r/GUI/Jobs/UIThreadWorker.hpp"
 #include "slic3r/Utils/PrusaConnect.hpp"
@@ -1449,8 +1450,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 //if (loaded_printer_technology == ptFFF && load_model)
                 //    CustomGCode::update_custom_gcode_per_print_z_from_config(model.custom_gcode_per_print_z(), &preset_bundle->project_config);
 
-                // For exporting from the 3mf we shouldn't check printer_presets for the containing information about "Print Host upload"
-                wxGetApp().load_current_presets(false);
+                wxGetApp().load_current_presets();
                 // Update filament colors for the MM-printer profile in the full config
                 // to avoid black (default) colors for Extruders in the ObjectList,
                 // when for extruder colors are used filament colors
@@ -1605,7 +1605,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         preset_bundle->sla_materials.select_preset_by_name(preset_name, false, true);
                         preset_bundle->tmp_installed_presets = { preset_name };
                         q->notify_about_installed_presets();
-                        wxGetApp().load_current_presets(false);// For this case we shouldn't check printer_presets
+                        wxGetApp().load_current_presets();
                     }
                     break;
                 }
@@ -6428,14 +6428,7 @@ void Plater::reslice()
                 object->sla_points_status = sla::PointsStatus::Generating;
 
         // Show folder picker for PNG layer export
-        wxDirDialog dlg(this, _L("Choose PNG layer export directory:"),
-                        "C:\\3DPrinter\\output",
-                        wxDD_DEFAULT_STYLE);
-        if (dlg.ShowModal() == wxID_OK) {
-            active_sla_print().set_png_export_dir(into_u8(dlg.GetPath()));
-        } else {
-            active_sla_print().set_png_export_dir("");
-        }
+        prompt_png_export_dir(this, active_sla_print());
     }
 
     //FIXME Don't reslice if export of G-code or sending to OctoPrint is running.

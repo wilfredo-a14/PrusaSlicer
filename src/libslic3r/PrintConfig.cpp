@@ -4273,26 +4273,26 @@ void PrintConfigDef::init_sla_params()
     def->label = L("Display width");
     def->tooltip = L("Width of the display");
     def->min = 1;
-    def->set_default_value(new ConfigOptionFloat(120.));
+    def->set_default_value(new ConfigOptionFloat(Slic3r::dlp::DISPLAY_WIDTH_MM));
 
     def = this->add("display_height", coFloat);
     def->label = L("Display height");
     def->tooltip = L("Height of the display");
     def->min = 1;
-    def->set_default_value(new ConfigOptionFloat(68.));
+    def->set_default_value(new ConfigOptionFloat(Slic3r::dlp::DISPLAY_HEIGHT_MM));
 
     def = this->add("display_pixels_x", coInt);
     def->full_label = L("Number of pixels in");
     def->label = ("X");
     def->tooltip = L("Number of pixels in X");
     def->min = 100;
-    def->set_default_value(new ConfigOptionInt(2560));
+    def->set_default_value(new ConfigOptionInt(Slic3r::dlp::DISPLAY_PIXELS_X));
 
     def = this->add("display_pixels_y", coInt);
     def->label = ("Y");
     def->tooltip = L("Number of pixels in Y");
     def->min = 100;
-    def->set_default_value(new ConfigOptionInt(1440));
+    def->set_default_value(new ConfigOptionInt(Slic3r::dlp::DISPLAY_PIXELS_Y));
 
     def = this->add("display_mirror_x", coBool);
     def->full_label = L("Display horizontal mirroring");
@@ -4813,12 +4813,7 @@ void PrintConfigDef::init_sla_params()
     def->mode = comExpert;
     def->set_default_value(new ConfigOptionFloat(2.0));
 
-    def = this->add("corkscrew_enable", coBool);
-    def->label = L("Corkscrew mode");
-    def->category = L("Corkscrew");
-    def->tooltip = L("Enable corkscrew exposure mode.");
-    def->mode = comSimple;
-    def->set_default_value(new ConfigOptionBool(false));
+    this->init_dlp_params();
 
     def = this->add("material_print_speed", coEnum);
     def->label = L("Print speed");
@@ -5526,7 +5521,7 @@ std::string DynamicPrintConfig::validate()
 {
     // Full print config is initialized from the defaults.
     const ConfigOption *opt = this->option("printer_technology", false);
-    auto printer_technology = (opt == nullptr) ? ptFFF : static_cast<PrinterTechnology>(dynamic_cast<const ConfigOptionEnumGeneric*>(opt)->value);
+    auto printer_technology = (opt == nullptr) ? ptSLA : static_cast<PrinterTechnology>(dynamic_cast<const ConfigOptionEnumGeneric*>(opt)->value);
     switch (printer_technology) {
     case ptFFF:
     {
@@ -5811,7 +5806,7 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->label = ("Get list of printer models");
     def->tooltip = ("Get list of installed printer models into JSON.\n"
         "Note:\n"
-        "To print printer models for required technology use 'printer-technology' option with value FFF or SLA. By default printer_technology is FFF.\n"
+        "Printer technology is SLA.\n"
         "To print out JSON into file use 'output' option.\n"
         "To specify configuration folder use 'datadir' option.");
 
@@ -5868,9 +5863,7 @@ CLIActionsConfigDef::CLIActionsConfigDef()
 
     def = this->add("slice", coBool);
     def->label = L("Slice");
-//    def->tooltip = L("Slice the model as FFF or SLA based on the printer_technology configuration value.");
-    def->tooltip = L("Slice the model as FFF or SLA based on the printer_technology configuration value "
-                     "and export the result.");
+    def->tooltip = L("Slice the model as SLA and export the result.");
     def->cli = "slice|s";
     def->set_default_value(new ConfigOptionBool(false));
 
@@ -5984,6 +5977,11 @@ CLIMiscConfigDef::CLIMiscConfigDef()
     def->label = L("Output File");
     def->tooltip = L("The file where the output will be written (if not specified, it will be based on the input file).");
     def->cli = "output|o";
+
+    def = this->add("export_png_dir", coString);
+    def->label = L("Export PNG directory");
+    def->tooltip = L("Export rasterized SLA layers as PNG files to this directory (headless DLP testing).");
+    def->cli = "export-png-dir";
 
     def = this->add("datadir", coString);
     def->label = L("Data directory");

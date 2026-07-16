@@ -157,42 +157,6 @@ private:
     void on_user_logged_out(UserAccountSuccessEvent& e);
 };
 
-class PrinterWebViewPanel : public WebViewPanel
-{
-public:
-    PrinterWebViewPanel(wxWindow* parent, const wxString& default_url);
-    
-    void on_loaded(wxWebViewEvent& evt) override;
-    void on_script_message(wxWebViewEvent& evt) override;
-    void on_navigation_request(wxWebViewEvent &evt) override;
-    void send_api_key();
-    void send_credentials();
-    void set_api_key(const std::string &key)
-    {
-        clear();
-        m_api_key = key;
-    }
-    void set_credentials(const std::string &usr, const std::string &psk)
-    {
-        clear();
-        m_usr = usr;
-        m_psk = psk;
-    }
-    void clear() { m_api_key.clear(); m_usr.clear(); m_psk.clear(); m_api_key_sent = false; }
-
-    void on_reload_event(const std::string& message_data);
-protected:
-    void define_css() override;
-private:
-    std::string m_api_key;
-    std::string m_usr;
-    std::string m_psk;
-    bool m_api_key_sent {false};
-
-    void handle_message(const std::string& message);
-    std::map<std::string, std::function<void(const std::string&)>> m_events;
-};
-
 class PrintablesWebViewPanel : public WebViewPanel
 {
 public:

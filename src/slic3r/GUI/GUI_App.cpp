@@ -97,9 +97,7 @@
 #include "SavePresetDialog.hpp"
 #include "PrintHostDialogs.hpp" // IWYU pragma: keep
 #include "DesktopIntegrationDialog.hpp"
-#include "SendSystemInfoDialog.hpp"
 #include "Downloader.hpp"
-#include "PhysicalPrinterDialog.hpp"
 #include "WifiConfigDialog.hpp"
 #include "UserAccount.hpp"
 #include "UserAccountUtils.hpp"
@@ -848,15 +846,7 @@ void GUI_App::post_init()
     if (this->get_preset_updater_wrapper()) { // G-Code Viewer does not initialize preset_updater.
         CallAfter([this] {
             // preset_updater->sync downloads profile updates and than via event checks updates and incompatible presets. We need to run it on startup.
-            // start before cw so it is canceled by cw if needed?
             this->get_preset_updater_wrapper()->sync_preset_updater(this, preset_bundle);
-            bool cw_showed = this->config_wizard_startup();
-            if (! cw_showed) {
-                // The CallAfter is needed as well, without it, GL extensions did not show.
-                // Also, we only want to show this when the wizard does not, so the new user
-                // sees something else than "we want something" on the first start.
-                show_send_system_info_dialog_if_needed();   
-            }  
             // app version check is asynchronous and triggers blocking dialog window, better call it last
             this->app_version_check(false);
         });
@@ -1639,8 +1629,6 @@ bool GUI_App::on_init_inner()
     if (is_editor())
         update_mode(); // update view mode after fix of the object_list size
 
-    show_printer_webview_tab();
-
 #ifdef _WIN32
     mainframe->update_title(); // To ensure taskbar icons is updated.
 #endif
@@ -2109,28 +2097,6 @@ void GUI_App::set_auto_toolbar_icon_scale(float scale) const
     app_config->set("auto_toolbar_size", val);
 }
 
-// check user printer_presets for the containing information about "Print Host upload"
-void GUI_App::check_printer_presets()
-{
-    std::vector<std::string> preset_names = PhysicalPrinter::presets_with_print_host_information(preset_bundle->printers);
-    if (preset_names.empty())
-        return;
-
-    wxString msg_text =  _L("You have the following presets with saved options for \"Print Host upload\"") + ":";
-    for (const std::string& preset_name : preset_names)
-        msg_text += "\n    \"" + from_u8(preset_name) + "\",";
-    msg_text.RemoveLast();
-    msg_text += "\n\n" + _L("But since this version of PrusaSlicer we don't show this information in Printer Settings anymore.\n"
-                            "Settings will be available in physical printers settings.") + "\n\n" +
-                         _L("By default new Printer devices will be named as \"Printer N\" during its creation.\n"
-                            "Note: This name can be changed later from the physical printers settings");
-
-    //wxMessageDialog(nullptr, msg_text, _L("Information"), wxOK | wxICON_INFORMATION).ShowModal();
-    MessageDialog(nullptr, msg_text, _L("Information"), wxOK | wxICON_INFORMATION).ShowModal();
-
-    preset_bundle->physical_printers.load_printers_from_presets(preset_bundle->printers);
-}
-
 void GUI_App::recreate_GUI(const wxString& msg_name)
 {
     m_is_recreating_gui = true;
@@ -2162,12 +2128,6 @@ void GUI_App::recreate_GUI(const wxString& msg_name)
 
     obj_list()->set_min_height();
     update_mode();
-
-    // #ys_FIXME_delete_after_testing  Do we still need this  ?
-//     CallAfter([]() {
-//         // Run the config wizard, don't offer the "reset user profile" checkbox.
-//         config_wizard_startup(true);
-//     });
 
     m_is_recreating_gui = false;
 }
@@ -2968,7 +2928,7 @@ bool GUI_App::check_and_save_current_preset_changes(const wxString& caption, con
             for (const std::pair<std::string, Preset::Type>& nt : dlg.get_names_and_types())
                 preset_bundle->save_changes_for_preset(nt.first, nt.second, dlg.get_unselected_options(nt.second));
 
-            load_current_presets(false);
+            load_current_presets();
 
             // if we saved changes to the new presets, we should to 
             // synchronize config.ini with the current selections.
@@ -2988,7 +2948,7 @@ void GUI_App::apply_keeped_preset_modifications()
         if (tab->supports_printer_technology(printer_technology))
             tab->apply_config_from_cache();
     }
-    load_current_presets(false);
+    load_current_presets();
 }
 
 // This is called when creating new project or load another project
@@ -3018,7 +2978,7 @@ bool GUI_App::check_and_keep_current_preset_changes(const wxString& caption, con
                 if (tab->supports_printer_technology(printer_technology) && tab->current_preset_is_dirty())
                     tab->m_presets->discard_current_changes();
             }
-            load_current_presets(false);
+            load_current_presets();
         };
 
         if (dlg.discard())
@@ -3119,12 +3079,9 @@ bool GUI_App::checked_tab(Tab* tab)
 }
 
 // Update UI / Tabs to reflect changes in the currently loaded presets
-void GUI_App::load_current_presets(bool check_printer_presets_ /*= true*/)
+void GUI_App::load_current_presets()
 {
-    // check printer_presets for the containing information about "Print Host upload"
-    // and create physical printer from it, if any exists
-    if (check_printer_presets_)
-        check_printer_presets();
+    preset_bundle->physical_printers.unselect_printer();
 
     PrinterTechnology printer_technology = preset_bundle->printers.get_edited_preset().printer_technology();
 	this->plater()->set_printer_technology(printer_technology);
@@ -3561,30 +3518,6 @@ void GUI_App::window_pos_sanitize(wxTopLevelWindow* window)
     if (window->GetScreenRect() != metrics.get_rect()) {
         window->SetSize(metrics.get_rect());
     }
-}
-
-bool GUI_App::config_wizard_startup()
-{
-    if (!m_app_conf_exists || preset_bundle->printers.only_default_printers()) {
-        run_wizard(ConfigWizard::RR_DATA_EMPTY);
-        return true;
-    } else if (get_app_config()->legacy_datadir()) {
-        // Looks like user has legacy pre-vendorbundle data directory,
-        // explain what this is and run the wizard
-
-        MsgDataLegacy dlg;
-        dlg.ShowModal();
-
-        run_wizard(ConfigWizard::RR_DATA_LEGACY);
-        return true;
-    } 
-#ifndef __APPLE__    
-    else if (is_editor() && m_last_app_conf_lower_version && app_config->get_bool("downloader_url_registered")) {
-        show_downloader_registration_dialog();
-        return true;
-    }
-#endif
-    return false;
 }
 
 bool GUI_App::check_updates(const bool invoked_by_user)
@@ -4181,12 +4114,6 @@ void GUI_App::handle_connect_request_printer_select_inner(const std::string & ms
     }
     select_filament_from_connect(msg);
 }
-
-void GUI_App::show_printer_webview_tab()
-{
-    mainframe->show_printer_webview_tab(preset_bundle->physical_printers.get_selected_printer_config());
-}
-
 
 void GUI_App::printables_download_request(const std::string& download_url, const std::string& model_url)
 {

@@ -65,6 +65,7 @@
 #include "NotificationManager.hpp"
 #include "Preferences.hpp"
 #include "WebViewPanel.hpp"
+#include "OldGUISettingsPanel.hpp"
 #include "UserAccount.hpp"
 
 #ifdef _WIN32
@@ -603,9 +604,12 @@ void MainFrame::update_title()
 
 static wxString GetTooltipForSettingsButton(PrinterTechnology pt)
 {
-    std::string tooltip = _u8L("Switch to Settings") + "\n" + "[" + shortkey_ctrl_prefix() + "2] - " + _u8L("Print Settings Tab") +
-                                                       "\n" + "[" + shortkey_ctrl_prefix() + "3] - " + (pt == ptFFF ? _u8L("Filament Settings Tab") : _u8L("Material Settings Tab")) +
-                                                       "\n" + "[" + shortkey_ctrl_prefix() + "4] - " + _u8L("Printer Settings Tab");
+    std::string tooltip = _u8L("Switch to Settings") + "\n" + "[" + shortkey_ctrl_prefix() + "2] - " + _u8L("Print Settings Tab");
+    if (pt == ptFFF)
+        tooltip += "\n[" + shortkey_ctrl_prefix() + "3] - " + _u8L("Printer Settings Tab");
+    else
+        tooltip += "\n[" + shortkey_ctrl_prefix() + "3] - " + _u8L("Material Settings Tab") +
+                   "\n[" + shortkey_ctrl_prefix() + "4] - " + _u8L("Printer Settings Tab");
     return from_u8(tooltip);
 }
 
@@ -800,20 +804,24 @@ void MainFrame::register_win32_callbacks()
 void MainFrame::create_preset_tabs()
 {
     add_created_tab(new TabPrint(m_tabpanel), "cog");
-    add_created_tab(new TabFilament(m_tabpanel), "spool");
+    Tab* filament_tab = new TabFilament(m_tabpanel);
+    filament_tab->create_preset_tab();
+    filament_tab->Hide();
     add_created_tab(new TabSLAPrint(m_tabpanel), "cog");
     add_created_tab(new TabSLAMaterial(m_tabpanel), "resin");
-    add_created_tab(new TabPrinter(m_tabpanel), wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology() == ptFFF ? "printer" : "sla_printer");
+    add_created_tab(new TabPrinter(m_tabpanel), "sla_printer");
     
     m_printables_webview = new PrintablesWebViewPanel(m_tabpanel);
     add_printables_webview_tab();
+
+    m_old_gui_settings = new OldGUISettingsPanel(m_tabpanel);
+    m_tabpanel->InsertNewPage(m_tabpanel->FindPage(m_printables_webview) + 1,
+                              m_old_gui_settings, L("Old GUI"), "", false);
    
     m_connect_webview = new ConnectWebViewPanel(m_tabpanel);
-    m_printer_webview = new PrinterWebViewPanel(m_tabpanel, L"");
    
     // new created tabs have to be hidden by default
     m_connect_webview->Hide();
-    m_printer_webview->Hide();
 
 }
 
@@ -848,7 +856,9 @@ void MainFrame::add_connect_webview_tab()
     // insert "Connect" tab to position next to "Printer" tab
     // order of tabs: Plater - Print Settings - Filaments - Printers - Prusa Connect - Prusa Link
 
-    int n = m_tabpanel->FindPage(m_printables_webview) + 1;
+    int n = m_old_gui_settings != nullptr ?
+        m_tabpanel->FindPage(m_old_gui_settings) + 1 :
+        m_tabpanel->FindPage(m_printables_webview) + 1;
     wxWindow* page = m_connect_webview;
     const wxString text(L"Prusa Connect");
     const std::string bmp_name = "";
@@ -922,69 +932,12 @@ void MainFrame::remove_printables_webview_tab()
     m_printables_webview->destroy_browser();
 }
 
-void MainFrame::show_printer_webview_tab(DynamicPrintConfig* dpc)
-{
-    
-    remove_printer_webview_tab();
-    // if physical printer is selected
-    if (dpc && dpc->option<ConfigOptionEnum<PrintHostType>>("host_type")->value != htPrusaConnect) {
-        std::string url = dpc->opt_string("print_host");
-        if (url.find("http://") != 0 && url.find("https://") != 0) {
-            url = "http://" + url;
-        }
-        // set password / api key
-        if (dynamic_cast<const ConfigOptionEnum<AuthorizationType>*>(dpc->option("printhost_authorization_type"))->value == AuthorizationType::atKeyPassword) {
-            set_printer_webview_api_key(dpc->opt_string("printhost_apikey"));
-        }
-        else {
-            set_printer_webview_credentials(dpc->opt_string("printhost_user"), dpc->opt_string("printhost_password"));
-        }
-        add_printer_webview_tab(from_u8(url));
-    }
-}
-
-void MainFrame::add_printer_webview_tab(const wxString& url)
-{
-    if (m_printer_webview_added) {
-        //set_printer_webview_tab_url(url);
-        return;
-    }
-    m_printer_webview_added = true;
-    // add as the last (rightmost) panel
-    m_tabpanel->AddNewPage(m_printer_webview, _L("Physical Printer"), "");
-    m_printer_webview->set_default_url(url);
-    m_printer_webview->set_create_browser();
-}
-void MainFrame::remove_printer_webview_tab()
-{
-    if (!m_printer_webview_added) {
-        return;
-    }
-    if (m_tabpanel->GetPageText(m_tabpanel->GetSelection()) == _L("Physical Printer"))
-            select_tab(size_t(0));
-    m_printer_webview_added = false;
-    m_printer_webview->Hide();
-    m_tabpanel->RemovePage(m_tabpanel->FindPage(m_printer_webview));
-    m_printer_webview->destroy_browser();
-}
-
-void MainFrame::set_printer_webview_api_key(const std::string& key)
-{
-    m_printer_webview->set_api_key(key);
-}
-void MainFrame::set_printer_webview_credentials(const std::string& usr, const std::string& psk)
-{
-    m_printer_webview->set_credentials(usr, psk);
-}
-
 bool MainFrame::is_any_webview_selected()
 {
     int selection = m_tabpanel->GetSelection();
     if ( selection == m_tabpanel->FindPage(m_printables_webview)) 
         return true;
     if (m_connect_webview_added && selection == m_tabpanel->FindPage(m_connect_webview)) 
-        return true;
-    if (m_printer_webview_added && selection == m_tabpanel->FindPage(m_printer_webview)) 
         return true;
     return false;
 }
@@ -996,8 +949,6 @@ void MainFrame::reload_selected_webview()
        m_printables_webview->do_reload();
     if (m_connect_webview_added && selection == m_tabpanel->FindPage(m_connect_webview)) 
         m_connect_webview->do_reload();
-    if (m_printer_webview_added && selection == m_tabpanel->FindPage(m_printer_webview)) 
-        m_printer_webview->do_reload();
 }
 
 void MainFrame::on_tab_change_rename_reload_item(int new_tab)
@@ -1006,8 +957,7 @@ void MainFrame::on_tab_change_rename_reload_item(int new_tab)
         return;
     }
     if ( new_tab == m_tabpanel->FindPage(m_printables_webview) 
-        || (m_connect_webview_added && new_tab == m_tabpanel->FindPage(m_connect_webview)) 
-        || (m_printer_webview_added && new_tab == m_tabpanel->FindPage(m_printer_webview))) 
+        || (m_connect_webview_added && new_tab == m_tabpanel->FindPage(m_connect_webview))) 
     {
         m_menu_item_reload->SetItemLabel(_L("Re&load Web Content") + "\tF5");
         m_menu_item_reload->SetHelp(_L("Reload Web Content"));
@@ -1296,8 +1246,6 @@ void MainFrame::on_sys_color_changed()
         m_printables_webview->sys_color_changed();
     if (m_connect_webview)
         m_connect_webview->sys_color_changed();
-    if (m_printer_webview)
-        m_printer_webview->sys_color_changed();
 
     MenuFactory::sys_color_changed(m_menubar);
 
@@ -1554,9 +1502,6 @@ void MainFrame::init_menubar_as_editor()
         append_menu_item(export_menu, wxID_ANY, _L("Export Config &Bundle") + dots, _L("Export all presets to file"),
             [this](wxCommandEvent&) { export_configbundle(); }, "export_config_bundle", nullptr,
             []() {return true; }, this);
-        append_menu_item(export_menu, wxID_ANY, _L("Export Config Bundle With Physical Printers") + dots, _L("Export all presets including physical printers to file"),
-            [this](wxCommandEvent&) { export_configbundle(true); }, "export_config_bundle", nullptr,
-            []() {return true; }, this);
         append_submenu(fileMenu, export_menu, wxID_ANY, _L("&Export"), "");
 
         wxMenu* convert_menu = new wxMenu();
@@ -1668,7 +1613,7 @@ void MainFrame::init_menubar_as_editor()
         append_menu_item(windowMenu, wxID_HIGHEST + 2, _L("P&rint Settings Tab") + "\tCtrl+2", _L("Show the print settings"),
             [this/*, tab_offset*/](wxCommandEvent&) { select_tab(1); }, "cog", nullptr,
             []() {return true; }, this);
-        wxMenuItem* item_material_tab = append_menu_item(windowMenu, wxID_HIGHEST + 3, _L("&Filament Settings Tab") + "\tCtrl+3", _L("Show the filament settings"),
+        wxMenuItem* item_material_tab = append_menu_item(windowMenu, wxID_HIGHEST + 3, _L("Settings Tab") + "\tCtrl+3", _L("Show the settings"),
             [this/*, tab_offset*/](wxCommandEvent&) { select_tab(2); }, "spool", nullptr,
             []() {return true; }, this);
         m_changeable_menu_items.push_back(item_material_tab);
@@ -1883,9 +1828,10 @@ void MainFrame::update_menubar()
     m_changeable_menu_items[miExport]       ->SetItemLabel((is_fff ? _L("Export &G-code")         : _L("E&xport"))        + dots    + "\tCtrl+G");
     m_changeable_menu_items[miSend]         ->SetItemLabel((is_fff ? _L("S&end G-code")           : _L("S&end to print")) + dots    + "\tCtrl+Shift+G");
 
-    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel((is_fff ? _L("&Filament Settings Tab") : _L("Mate&rial Settings Tab"))   + "\tCtrl+3");
-    m_changeable_menu_items[miMaterialTab]  ->SetBitmap(*get_bmp_bundle(is_fff ? "spool"   : "resin"));
+    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel((is_fff ? _L("Print&er Settings Tab") : _L("Mate&rial Settings Tab")) + "\tCtrl+3");
+    m_changeable_menu_items[miMaterialTab]  ->SetBitmap(*get_bmp_bundle(is_fff ? "printer" : "resin"));
 
+    m_changeable_menu_items[miPrinterTab]   ->Enable(!is_fff);
     m_changeable_menu_items[miPrinterTab]   ->SetBitmap(*get_bmp_bundle(is_fff ? "printer" : "sla_printer"));
 }
 
@@ -2301,10 +2247,6 @@ void MainFrame::technology_changed()
 
     if (!m_menubar)
         return;
-    // update menu titles
-    if (int id = m_menubar->FindMenu(pt == ptFFF ? _L("Material Settings") : _L("Filament Settings")); id != wxNOT_FOUND)
-        m_menubar->SetMenuLabel(id , pt == ptSLA ? _L("Material Settings") : _L("Filament Settings"));
-
     //if (wxGetApp().tab_panel()->GetSelection() != wxGetApp().tab_panel()->GetPageCount() - 1)
     //    wxGetApp().tab_panel()->SetSelection(wxGetApp().tab_panel()->GetPageCount() - 1);
 
@@ -2375,7 +2317,7 @@ SettingsDialog::SettingsDialog(MainFrame* mainframe)
                 case '1': { m_main_frame->select_tab(size_t(0)); break; }
                 case '2': { m_main_frame->select_tab(1); break; }
                 case '3': { m_main_frame->select_tab(2); break; }
-                case '4': { m_main_frame->select_tab(3); break; }
+                case '4': { if (m_main_frame->plater()->printer_technology() != ptFFF) m_main_frame->select_tab(3); break; }
 #ifdef __APPLE__
                 case 'f':
 #else /* __APPLE__ */

@@ -152,9 +152,6 @@ SavePresetDialog::Item::Item(Preset::Type type, const std::string& suffix, wxBox
     sizer->Add(input_name_sizer,0, wxEXPAND | (label_top ? 0 : wxTOP) | wxBOTTOM, BORDER_W);
     sizer->Add(m_valid_label,   0, wxEXPAND | wxLEFT,   3*BORDER_W);
 
-    if (m_type == Preset::TYPE_PRINTER)
-        parent->add_info_for_edit_ph_printer(sizer);
-
     update();
 }
 
@@ -328,9 +325,6 @@ void SavePresetDialog::Item::update()
 
     update_valid_bmp();
 
-    if (dlg && m_type == Preset::TYPE_PRINTER)
-        dlg->update_info_for_edit_ph_printer(m_preset_name);
-
     m_parent->Layout();
 }
 
@@ -468,66 +462,6 @@ bool SavePresetDialog::enable_ok_btn() const
     return true;
 }
 
-void SavePresetDialog::add_info_for_edit_ph_printer(wxBoxSizer* sizer)
-{
-    PhysicalPrinterCollection& printers = wxGetApp().preset_bundle->physical_printers;
-    m_ph_printer_name = printers.get_selected_printer_name();
-    m_old_preset_name = printers.get_selected_printer_preset_name();
-
-    wxString msg_text = from_u8((boost::format(_u8L("You have selected physical printer \"%1%\" \n"
-                                                    "with related printer preset \"%2%\"")) %
-                                                    m_ph_printer_name % m_old_preset_name).str());
-    m_label = new wxStaticText(this, wxID_ANY, msg_text);
-    m_label->SetFont(wxGetApp().bold_font());
-
-    m_action = ChangePreset;
-    m_radio_sizer = new wxBoxSizer(wxHORIZONTAL);
-
-    wxStaticBox* action_stb = new wxStaticBox(this, wxID_ANY, "");
-    if (!wxOSX) action_stb->SetBackgroundStyle(wxBG_STYLE_PAINT);
-    action_stb->SetFont(wxGetApp().bold_font());
-
-    wxStaticBoxSizer* stb_sizer = new wxStaticBoxSizer(action_stb, wxVERTICAL);
-    for (int id = 0; id < 3; id++) {
-        wxRadioButton* btn = new wxRadioButton(this, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, id == 0 ? wxRB_GROUP : 0);
-        btn->SetValue(id == int(ChangePreset));
-        btn->Bind(wxEVT_RADIOBUTTON, [this, id](wxCommandEvent&) { m_action = (ActionType)id; });
-        stb_sizer->Add(btn, 0, wxEXPAND | wxTOP, 5);
-    }
-    m_radio_sizer->Add(stb_sizer, 1, wxEXPAND | wxTOP, 2*BORDER_W);
-
-    sizer->Add(m_label,         0, wxEXPAND | wxLEFT | wxTOP,   3*BORDER_W);
-    sizer->Add(m_radio_sizer,   1, wxEXPAND | wxLEFT,           3*BORDER_W);
-}
-
-void SavePresetDialog::update_info_for_edit_ph_printer(const std::string& preset_name)
-{
-    bool show = wxGetApp().preset_bundle->physical_printers.has_selection() && m_old_preset_name != preset_name;
-
-    m_label->Show(show);
-    m_radio_sizer->ShowItems(show);
-    if (!show) {
-        this->SetMinSize(wxSize(100,50));
-        return;
-    }
-
-    if (wxSizerItem* sizer_item = m_radio_sizer->GetItem(size_t(0))) {
-        if (wxStaticBoxSizer* stb_sizer = static_cast<wxStaticBoxSizer*>(sizer_item->GetSizer())) {
-            wxString msg_text = format_wxstr(_L("What would you like to do with \"%1%\" preset after saving?"), preset_name);
-            stb_sizer->GetStaticBox()->SetLabel(msg_text);
-
-            wxString choices[] = { format_wxstr(_L("Change \"%1%\" to \"%2%\" for this physical printer \"%3%\""), m_old_preset_name, preset_name, m_ph_printer_name),
-                                   format_wxstr(_L("Add \"%1%\" as a next preset for the the physical printer \"%2%\""), preset_name, m_ph_printer_name),
-                                   format_wxstr(_L("Just switch to \"%1%\" preset"), preset_name) };
-
-            size_t n = 0;
-            for (const wxString& label : choices)
-                stb_sizer->GetItem(n++)->GetWindow()->SetLabel(label);
-        }
-        Refresh();
-    }
-}
-
 bool SavePresetDialog::Layout()
 {
     const bool ret = DPIDialog::Layout();
@@ -551,41 +485,10 @@ void SavePresetDialog::on_dpi_changed(const wxRect& suggested_rect)
     Refresh();
 }
 
-void SavePresetDialog::update_physical_printers(const std::string& preset_name)
-{
-    if (m_action == UndefAction)
-        return;
-
-    PhysicalPrinterCollection& physical_printers = wxGetApp().preset_bundle->physical_printers;
-    if (!physical_printers.has_selection())
-        return;
-
-    std::string printer_preset_name = physical_printers.get_selected_printer_preset_name();
-
-    if (m_action == Switch)
-        // unselect physical printer, if it was selected
-        physical_printers.unselect_printer();
-    else
-    {
-        PhysicalPrinter printer = physical_printers.get_selected_printer();
-
-        if (m_action == ChangePreset)
-            printer.delete_preset(printer_preset_name);
-
-        if (printer.add_preset(preset_name))
-            physical_printers.save_printer(printer);
-
-        physical_printers.select_printer(printer.get_full_name(preset_name));
-    }    
-}
-
 void SavePresetDialog::accept()
 {
-    for (Item* item : m_items) {
+    for (Item* item : m_items)
         item->accept();
-        if (item->type() == Preset::TYPE_PRINTER)
-            update_physical_printers(item->preset_name());
-    }
 
     EndModal(wxID_OK);
 }

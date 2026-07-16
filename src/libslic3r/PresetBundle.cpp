@@ -82,7 +82,8 @@ PresetBundle::PresetBundle() :
     this->sla_prints.default_preset().compatible_printers_condition();
     this->sla_prints.default_preset().inherits();
 
-    this->printers.add_default_preset(Preset::sla_printer_options(), static_cast<const SLAMaterialConfig&>(SLAFullPrintConfig::defaults()), "- default SLA -");
+    this->printers.add_default_preset(Preset::sla_printer_options(), static_cast<const SLAMaterialConfig&>(SLAFullPrintConfig::defaults()), "- default DLP -");
+    this->printers.preset(0).printer_technology_ref() = ptFFF;
     this->printers.preset(1).printer_technology_ref() = ptSLA;
     for (size_t i = 0; i < 2; ++ i) {
 		// The following ugly switch is to avoid printers.preset(0) to return the edited instance, as the 0th default is the current one.
@@ -109,7 +110,7 @@ PresetBundle::PresetBundle() :
     this->sla_prints   .select_preset(0);
     this->filaments    .select_preset(0);
     this->sla_materials.select_preset(0);
-    this->printers     .select_preset(0);
+    this->printers     .select_preset(1);
 
     this->project_config.apply_only(FullPrintConfig::defaults(), s_project_options);
 }
@@ -455,8 +456,11 @@ static inline std::string remove_ini_suffix(const std::string &name)
 void PresetBundle::load_installed_printers(const AppConfig &config)
 {
 	this->update_system_maps();
-    for (auto &preset : printers)
+    for (auto &preset : printers) {
         preset.set_visible_from_appconfig(config);
+        if (preset.printer_technology() != ptSLA)
+            preset.is_visible = false;
+    }
 }
 
 void PresetBundle::cache_extruder_filaments_names()
@@ -670,6 +674,10 @@ void PresetBundle::load_selections(AppConfig &config, const PresetPreferences& p
     const Preset *initial_printer = printers.find_preset(initial_printer_profile_name);
     // If executed due to a Config Wizard update, preferred_printer contains the first newly installed printer, otherwise nullptr.
     const Preset *preferred_printer = printers.find_system_preset_by_model_and_variant(preferred_selection.printer_model_id, preferred_selection.printer_variant);
+    if (preferred_printer != nullptr && preferred_printer->printer_technology() != ptSLA)
+        preferred_printer = nullptr;
+    if (initial_printer != nullptr && initial_printer->printer_technology() != ptSLA)
+        initial_printer_profile_name.clear();
     printers.select_preset_by_name(preferred_printer ? preferred_printer->name : initial_printer_profile_name, true);
 
     // Selects the profile, leaves it to -1 if the initial profile name is empty or if it was not found.

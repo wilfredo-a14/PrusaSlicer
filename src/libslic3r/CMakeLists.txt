@@ -325,6 +325,14 @@ set(SLIC3R_SOURCES
     PrintBase.hpp
     PrintConfig.cpp
     PrintConfig.hpp
+    DLPConfig.cpp
+    DLPConfig.hpp
+    DLPCorkscrew.cpp
+    DLPCorkscrew.hpp
+    DLPDebugLog.cpp
+    DLPDebugLog.hpp
+    DLPExport.cpp
+    DLPExport.hpp
     PrintObject.cpp
     PrintObjectSlice.cpp
     PrintRegion.cpp

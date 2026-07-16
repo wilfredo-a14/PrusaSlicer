@@ -35,6 +35,9 @@
 #include "libslic3r/PNGReadWrite.hpp"
 #include "libslic3r/MultipleBeds.hpp"
 #include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/DLPDebugLog.hpp"
+#include "libslic3r/DLPCorkscrew.hpp"
+#include "libslic3r/format.hpp"
 
 #include "CLI/CLI.hpp"
 #include "CLI/ProfilesSharingUtils.hpp"
@@ -351,6 +354,30 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
 
             Print       fff_print;
             SLAPrint    sla_print;
+
+            if (printer_technology == ptSLA) {
+                // Keep verbose corkscrew/PNG details in the log file only.
+                // Opt in to full stdout mirroring with DLP_DEBUG_STDOUT=1.
+                const char *mirror_env = boost::nowide::getenv("DLP_DEBUG_STDOUT");
+                const bool mirror = mirror_env && mirror_env[0] == '1';
+                dlp::set_debug_log_mirror_stdout(mirror);
+                dlp::debug_log(Slic3r::format(
+                    "CLI: SLA headless slice — debug log mirror_stdout=%1%",
+                    mirror ? "true" : "false"));
+                if (cli.misc_config.has("export_png_dir")) {
+                    const std::string png_dir = cli.misc_config.opt_string("export_png_dir");
+                    sla_print.set_png_export_dir(png_dir);
+                    dlp::debug_log(Slic3r::format("CLI: PNG export directory set to %1%", png_dir));
+                    boost::nowide::cout << "DLP: PNG layer export directory set to " << png_dir << std::endl;
+                } else {
+                    dlp::debug_log("CLI: no --export-png-dir provided — PNG layer export disabled");
+                }
+                dlp::debug_log(Slic3r::format(
+                    "CLI: corkscrew_enable=%1% corkscrew_box_count=%2%",
+                    print_config.has("corkscrew_enable") ? (print_config.opt_bool("corkscrew_enable") ? "true" : "false") : "unset",
+                    print_config.has("corkscrew_box_count") ? std::to_string(print_config.opt_int("corkscrew_box_count")) : "unset"));
+            }
+
             sla_print.set_status_callback( [](const PrintBase::SlicingStatus& s) {
                 if (s.percent >= 0) { // FIXME: is this sufficient?
                     printf("%3d%s %s\n", s.percent, "% =>", s.text.c_str());
@@ -395,6 +422,28 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
                     // We need to finalize the filename beforehand because the export function sets the filename inside the zip metadata
                     outfile_final = sla_print.print_statistics().finalize_output_path(outfile);
                     sla_print.export_print(outfile_final);
+
+                    if (sla_print.default_object_config().corkscrew_enable.getBool()) {
+                        const dlp::CorkscrewVerificationResult &verify = dlp::last_corkscrew_verification();
+                        if (verify.ran) {
+                            boost::nowide::cout << "DLP corkscrew verification: "
+                                << (verify.ok ? "PASSED" : "FAILED")
+                                << " (" << verify.layer_count << " layers";
+                            if (verify.failed_layers > 0)
+                                boost::nowide::cout << ", " << verify.failed_layers << " failed";
+                            boost::nowide::cout << ")" << std::endl;
+                            boost::nowide::cout << "DLP debug log: " << dlp::debug_log_path() << std::endl;
+                            dlp::print_debug_log_tail(10);
+                            if (!verify.ok)
+                                return false;
+                        }
+                    } else {
+                        // Still show the last debug lines when PNG/export logging ran.
+                        dlp::print_debug_log_tail(10);
+                    }
+                    if (!sla_print.png_export_dir().empty())
+                        boost::nowide::cout << "DLP: exported PNG layers to "
+                            << sla_print.png_export_dir() << std::endl;
                 }
                 if (outfile != outfile_final) {
                     if (Slic3r::rename_file(outfile, outfile_final)) {

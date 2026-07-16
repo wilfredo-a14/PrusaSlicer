@@ -467,6 +467,14 @@ struct SLAPrintStatistics
     }
 };
 
+struct ExecutionTBB;
+
+namespace dlp {
+void export_png_layers(SLAPrint &print,
+	                       const ExecutionTBB &ex_tbb,
+	                       const std::function<bool()> &canceled);
+}
+
 /**
  * @brief This class is the high level FSM for the SLA printing process.
  *
@@ -590,6 +598,7 @@ public:
     static bool is_prusa_print(const std::string& printer_model);
 
     void set_png_export_dir(const std::string &dir) { m_png_export_dir = dir; }
+    const std::string& png_export_dir() const { return m_png_export_dir; }
 
 private:
     

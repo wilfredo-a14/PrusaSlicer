@@ -188,7 +188,6 @@ protected:
 	ScalableButton*		m_btn_save_preset;
 	ScalableButton*		m_btn_rename_preset;
 	ScalableButton*		m_btn_delete_preset;
-	ScalableButton*		m_btn_edit_ph_printer {nullptr};
 	ScalableButton*		m_btn_hide_incompatible_presets;
 	wxBoxSizer*			m_top_hsizer;
 	wxBoxSizer*			m_hsizer;
@@ -601,6 +600,7 @@ class TabSLAPrint : public Tab
     // for a particular method. The label is the friendly name for the method
     void build_sla_support_params(const std::vector<SamePair<std::string>> &methods,
                                   const Slic3r::GUI::PageShp &page);
+    void build_dlp_options_pages();
 
 public:
     TabSLAPrint(wxBookCtrlBase* parent) :

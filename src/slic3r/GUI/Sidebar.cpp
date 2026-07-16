@@ -726,8 +726,6 @@ void Sidebar::on_select_preset(wxCommandEvent& evt)
     std::string preset_name = wxGetApp().preset_bundle->get_preset_name_by_alias(preset_type,
                               Preset::remove_suffix_modified(into_u8(combo->GetString(selection))), idx);
 
-    std::string last_selected_ph_printer_name = combo->get_selected_ph_printer_name();
-
     bool select_preset = !combo->selection_is_changed_according_to_physical_printers();
     // TODO: ?
     if (preset_type == Preset::TYPE_FILAMENT) {
@@ -746,7 +744,7 @@ void Sidebar::on_select_preset(wxCommandEvent& evt)
     }
     else if (select_preset) {
         wxWindowUpdateLocker noUpdates(m_presets_panel);
-        wxGetApp().get_tab(preset_type)->select_preset(preset_name, false, last_selected_ph_printer_name);
+        wxGetApp().get_tab(preset_type)->select_preset(preset_name, false, std::string());
     }
 
     if (preset_type != Preset::TYPE_PRINTER || select_preset) {

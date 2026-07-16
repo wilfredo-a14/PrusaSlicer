@@ -135,6 +135,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/IconManager.hpp
     GUI/MainFrame.cpp
     GUI/MainFrame.hpp
+    GUI/OldGUISettingsPanel.cpp
+    GUI/OldGUISettingsPanel.hpp
     GUI/UpdatesUIManager.cpp
     GUI/UpdatesUIManager.hpp
     GUI/FrequentlyChangedParameters.cpp
@@ -155,8 +157,6 @@ set(SLIC3R_GUI_SOURCES
     GUI/SavePresetDialog.cpp
     GUI/BulkExportDialog.hpp
     GUI/BulkExportDialog.cpp
-    GUI/PhysicalPrinterDialog.hpp
-    GUI/PhysicalPrinterDialog.cpp
     GUI/GUI_Factories.cpp
     GUI/GUI_Factories.hpp
     GUI/GUI_ObjectList.cpp
@@ -173,6 +173,10 @@ set(SLIC3R_GUI_SOURCES
     GUI/MeshUtils.hpp
     GUI/Tab.cpp
     GUI/Tab.hpp
+    GUI/DLPTab.cpp
+    GUI/DLPTab.hpp
+    GUI/DLPPlater.cpp
+    GUI/DLPPlater.hpp
     GUI/ConfigManipulation.cpp
     GUI/ConfigManipulation.hpp
     GUI/Field.cpp

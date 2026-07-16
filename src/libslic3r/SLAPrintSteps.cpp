@@ -4,6 +4,8 @@
 ///|/
 #include <libslic3r/Exception.hpp>
 #include <libslic3r/SLAPrintSteps.hpp>
+#include <libslic3r/DLPExport.hpp>
+#include <libslic3r/DLPCorkscrew.hpp>
 #include <libslic3r/MeshBoolean.hpp>
 #include <libslic3r/TriangleMeshSlicer.hpp>
 #include <libslic3r/Execution/ExecutionTBB.hpp>
@@ -1454,12 +1456,26 @@ void SLAPrint::Steps::merge_slices_and_eval_stats() {
     }
 
     report_status(-2, "", SlicingStatus::RELOAD_SLA_PREVIEW);
+
+    BOOST_LOG_TRIVIAL(debug) << "SLA merge: running corkscrew box verification"
+        << " corkscrew_enable=" << m_print->default_object_config().corkscrew_enable.getBool()
+        << " corkscrew_box_count=" << m_print->default_object_config().corkscrew_box_count.getInt()
+        << " layers=" << m_print->print_layers().size();
+    dlp::debug_corkscrew_box_slices(*m_print);
 }
 
 // Rasterizing the model objects, and their supports
 void SLAPrint::Steps::rasterize()
 {
     if(canceled() || !m_print->m_archiver) return;
+
+    BOOST_LOG_TRIVIAL(debug) << "SLA rasterize: starting with "
+        << m_print->m_printer_input.size() << " layers"
+        << ", png_export_dir="
+        << (m_print->m_png_export_dir.empty() ? "(none)" : m_print->m_png_export_dir)
+        << ", display "
+        << m_print->m_printer_config.display_width.getFloat() << "x"
+        << m_print->m_printer_config.display_height.getFloat() << "mm";
 
     // coefficient to map the rasterization state (0-99) to the allocated
     // portion (slot) of the process state
@@ -1506,87 +1522,7 @@ void SLAPrint::Steps::rasterize()
     m_print->m_archiver->draw_layers(m_print->m_printer_input.size(), lvlfn,
                                     [this]() { return canceled(); }, ex_tbb);
 
-    // ===== PNG EXPORT - Fixed build area rasterization =====
-    // Uses fixed pixel dimensions from the printer's display (so scale doesn't
-    // change with model size), but centers the model in the image.
-    // Only exports if user chose a directory via the folder picker.
-    if (!m_print->m_png_export_dir.empty()) {
-    try {
-        namespace fs = std::filesystem;
-        fs::path output_dir = m_print->m_png_export_dir;
-        fs::create_directories(output_dir);
-
-        const auto &pcfg = m_print->m_printer_config;
-        double disp_w = pcfg.display_width.getFloat();   // mm
-        double disp_h = pcfg.display_height.getFloat();   // mm
-
-        const size_t target_w = 2560;
-        const size_t target_h = 1600;
-
-        // Fixed pixel dimensions from display size (scale doesn't change with model)
-        sla::Resolution res{target_w, target_h};
-        sla::PixelDim   pxdim{disp_w / target_w, disp_h / target_h};
-
-        // Compute model bounding box to find where it actually is in coord space
-        BoundingBox bbox;
-        for (const PrintLayer& pl : m_print->m_printer_input) {
-            for (const ExPolygon& poly : pl.transformed_slices())
-                bbox.merge(get_extents(poly));
-        }
-
-        if (!bbox.defined) goto png_export_done;
-
-        {
-            // Center the model in the image:
-            // We want model_center to map to image_center (target_w/2, target_h/2)
-            // pixel = (model_coord + center) * SCALING_FACTOR / pxdim
-            // Solving: center = scaled(disp/2) - model_center
-            coord_t model_cx = (bbox.min.x() + bbox.max.x()) / 2;
-            coord_t model_cy = (bbox.min.y() + bbox.max.y()) / 2;
-
-            sla::RasterBase::Trafo tr;
-            tr.center_x = scaled(disp_w / 2.0) - model_cx;
-            tr.center_y = scaled(disp_h / 2.0) - model_cy;
-
-            size_t num_layers = m_print->m_printer_input.size();
-            std::vector<sla::EncodedRaster> png_layers(num_layers);
-
-            execution::for_each(
-                ex_tbb, size_t(0), num_layers,
-                [this, &png_layers, &res, &pxdim, &tr](size_t idx) {
-                    if (canceled()) return;
-
-                    auto raster = sla::create_raster_grayscale_aa(res, pxdim, 1.0, tr);
-
-                    const PrintLayer& pl = m_print->m_printer_input[idx];
-                    for (const ExPolygon& poly : pl.transformed_slices())
-                        raster->draw(poly);
-
-                    png_layers[idx] = raster->encode(sla::PNGRasterEncoder{});
-                },
-                execution::max_concurrency(ex_tbb));
-
-            // Write PNG files to disk
-            for (size_t i = 0; i < num_layers; ++i) {
-                std::string filename = Slic3r::format("layer_%04d.png", i);
-                fs::path filepath = output_dir / filename;
-                std::ofstream outfile(filepath, std::ios::binary);
-                if (outfile) {
-                    const auto& enc = png_layers[i];
-                    outfile.write(static_cast<const char*>(enc.data()), enc.size());
-                }
-            }
-
-            BOOST_LOG_TRIVIAL(info) << "Exported " << num_layers
-                << " PNG layers (" << target_w << "x" << target_h
-                << ", display " << disp_w << "x" << disp_h << "mm"
-                << ") to: " << output_dir.string();
-        }
-        png_export_done:;
-    } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(warning) << "PNG layer export failed: " << e.what();
-    }
-    } // end if (!m_png_export_dir.empty())
+    dlp::export_png_layers(*m_print, ex_tbb, [this]() { return canceled(); });
 }
 
 std::string SLAPrint::Steps::label(SLAPrintObjectStep step)

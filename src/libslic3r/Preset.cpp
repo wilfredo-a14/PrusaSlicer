@@ -47,6 +47,7 @@
 #include "libslic3r/GCode/Thumbnails.hpp"
 
 #include "PresetBundle.hpp"
+#include "DLPConfig.hpp"
 
 using boost::property_tree::ptree;
 
@@ -626,6 +627,7 @@ static std::vector<std::string> s_Preset_sla_print_options {
     "hollowing_min_thickness",
     "hollowing_quality",
     "hollowing_closing_distance",
+    DLP_SLA_PRINT_PRESET_OPTION_ENTRIES
     "output_filename_format",
     "default_sla_print_profile",
     "compatible_printers",
@@ -835,7 +837,8 @@ void PresetCollection::load_presets(
         }
     m_presets.insert(m_presets.end(), std::make_move_iterator(presets_loaded.begin()), std::make_move_iterator(presets_loaded.end()));
     std::sort(m_presets.begin() + m_num_default_presets, m_presets.end());
-    this->select_preset(first_visible_idx());
+    if (! presets_loaded.empty())
+        this->select_preset(first_visible_idx());
     if (! errors_cummulative.empty())
         throw Slic3r::RuntimeError(errors_cummulative);
 }
