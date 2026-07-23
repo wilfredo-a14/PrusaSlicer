@@ -655,6 +655,7 @@ static std::vector<std::string> s_Preset_sla_material_options {
     "area_fill",
     "default_sla_material_profile",
     "zcorrection_layers",
+    DLP_SLA_MATERIAL_PRESET_OPTION_ENTRIES
     "compatible_prints", "compatible_prints_condition",
     "compatible_printers", "compatible_printers_condition", "inherits",
 
@@ -703,6 +704,7 @@ static std::vector<std::string> s_Preset_sla_printer_options {
     "display_width", "display_height", "display_pixels_x", "display_pixels_y",
     "display_mirror_x", "display_mirror_y",
     "display_orientation",
+    DLP_SLA_PRINTER_PRESET_OPTION_ENTRIES
     "fast_tilt_time", "slow_tilt_time", "high_viscosity_tilt_time", //"area_fill",
     "relative_correction",
     "relative_correction_x",

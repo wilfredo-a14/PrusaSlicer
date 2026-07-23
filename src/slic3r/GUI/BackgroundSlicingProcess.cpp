@@ -119,11 +119,16 @@ BackgroundSlicingProcess::~BackgroundSlicingProcess()
 	const auto temp_dir = boost::filesystem::path(m_temp_output_path).parent_path();
 	std::string prefix = boost::filesystem::path(m_temp_output_path).filename().string();
 	prefix = prefix.substr(0, prefix.find('_'));
-    for (const auto& entry : boost::filesystem::directory_iterator(temp_dir)) {
-        if (entry.is_regular_file()) {
+    boost::system::error_code ec;
+    if (temp_dir.empty() || !boost::filesystem::is_directory(temp_dir, ec) || ec)
+        return;
+
+    for (boost::filesystem::directory_iterator it(temp_dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const auto &entry = *it;
+        if (boost::filesystem::is_regular_file(entry.path(), ec) && !ec) {
             const std::string filename = entry.path().filename().string();
             if (boost::starts_with(filename, prefix) && boost::ends_with(filename, ".gcode"))
-                boost::filesystem::remove(entry);
+                boost::filesystem::remove(entry, ec);
         }
     }
 }

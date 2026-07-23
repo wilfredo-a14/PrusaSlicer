@@ -296,6 +296,13 @@ UserAccountCommunication::~UserAccountCommunication()
 void UserAccountCommunication::set_username(const std::string& username, bool store)
 {
     m_username = username;
+#ifndef __linux__
+    // This DLP-focused fork does not persist optional Prusa Account tokens in
+    // the operating-system password store. The active session remains usable
+    // until the application exits.
+    (void)store;
+    return;
+#endif
     if (!store && !username.empty()) {
         return;
     }
@@ -624,6 +631,10 @@ void UserAccountCommunication::set_refresh_time(int seconds)
 
 void UserAccountCommunication::read_stored_data(UserAccountCommunication::StoreData& result)
 {
+#ifndef __linux__
+    result = StoreData{};
+    return;
+#endif
     if (is_secret_store_ok()) {
         std::string key0, tokens;
         if (load_secret("tokens", key0, tokens)) {

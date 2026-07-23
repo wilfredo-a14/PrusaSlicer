@@ -65,7 +65,6 @@
 #include "NotificationManager.hpp"
 #include "Preferences.hpp"
 #include "WebViewPanel.hpp"
-#include "OldGUISettingsPanel.hpp"
 #include "UserAccount.hpp"
 
 #ifdef _WIN32
@@ -814,10 +813,6 @@ void MainFrame::create_preset_tabs()
     m_printables_webview = new PrintablesWebViewPanel(m_tabpanel);
     add_printables_webview_tab();
 
-    m_old_gui_settings = new OldGUISettingsPanel(m_tabpanel);
-    m_tabpanel->InsertNewPage(m_tabpanel->FindPage(m_printables_webview) + 1,
-                              m_old_gui_settings, L("Old GUI"), "", false);
-   
     m_connect_webview = new ConnectWebViewPanel(m_tabpanel);
    
     // new created tabs have to be hidden by default
@@ -856,9 +851,7 @@ void MainFrame::add_connect_webview_tab()
     // insert "Connect" tab to position next to "Printer" tab
     // order of tabs: Plater - Print Settings - Filaments - Printers - Prusa Connect - Prusa Link
 
-    int n = m_old_gui_settings != nullptr ?
-        m_tabpanel->FindPage(m_old_gui_settings) + 1 :
-        m_tabpanel->FindPage(m_printables_webview) + 1;
+    int n = m_tabpanel->FindPage(m_printables_webview) + 1;
     wxWindow* page = m_connect_webview;
     const wxString text(L"Prusa Connect");
     const std::string bmp_name = "";

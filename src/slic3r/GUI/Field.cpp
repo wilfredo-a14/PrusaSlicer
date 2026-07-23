@@ -1132,6 +1132,13 @@ void Choice::propagate_value()
                 return;
             break;
         }
+        case coString:
+        {
+            std::string old_val = !m_value.empty() ? boost::any_cast<std::string>(m_value) : "";
+            if (old_val == boost::any_cast<std::string>(get_value()))
+                return;
+            break;
+        }
         default:
         {
             double old_val = !m_value.empty() ? boost::any_cast<double>(m_value) : -99999;
@@ -1210,6 +1217,7 @@ void Choice::set_value(const std::string& value, bool change_event)  //! Redunda
         field->SetSelection(*opt);
     else
         field->SetValue(value);
+    m_value = value;
     m_disable_change_event = false;
 }
 
@@ -1253,6 +1261,8 @@ void Choice::set_value(const boost::any& value, bool change_event)
             if (double val; text_value.ToDouble(&val))
                 m_value = val;
         }
+        else if (m_opt.type == coString || m_opt.type == coStrings)
+            m_value = into_u8(text_value);
 
 		break;
 	}
@@ -1761,4 +1771,3 @@ boost::any& SliderCtrl::get_value()
 
 
 } // Slic3r :: GUI
-

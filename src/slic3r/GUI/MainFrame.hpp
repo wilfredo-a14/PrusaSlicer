@@ -47,7 +47,6 @@ class PreferencesDialog;
 class GalleryDialog;
 class ConnectWebViewPanel; 
 class PrintablesWebViewPanel;
-class OldGUISettingsPanel;
 
 enum QuickSlice
 {
@@ -104,7 +103,6 @@ class MainFrame : public DPIFrame
     bool                    m_connect_webview_added{ false };
     PrintablesWebViewPanel* m_printables_webview{ nullptr };
     bool                    m_printables_webview_added{ false };
-    OldGUISettingsPanel*    m_old_gui_settings{ nullptr };
 
     std::string     get_base_name(const wxString &full_name, const char *extension = nullptr) const;
     std::string     get_dir_name(const wxString &full_name) const;

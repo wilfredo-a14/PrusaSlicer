@@ -676,9 +676,11 @@ void PresetBundle::load_selections(AppConfig &config, const PresetPreferences& p
     const Preset *preferred_printer = printers.find_system_preset_by_model_and_variant(preferred_selection.printer_model_id, preferred_selection.printer_variant);
     if (preferred_printer != nullptr && preferred_printer->printer_technology() != ptSLA)
         preferred_printer = nullptr;
-    if (initial_printer != nullptr && initial_printer->printer_technology() != ptSLA)
-        initial_printer_profile_name.clear();
-    printers.select_preset_by_name(preferred_printer ? preferred_printer->name : initial_printer_profile_name, true);
+    if (initial_printer == nullptr || initial_printer->printer_technology() != ptSLA) {
+        initial_printer_profile_name = "- default DLP -";
+        config.set("presets", "printer", initial_printer_profile_name);
+    }
+    printers.select_preset_by_name(preferred_printer ? preferred_printer->name : initial_printer_profile_name, true, true);
 
     // Selects the profile, leaves it to -1 if the initial profile name is empty or if it was not found.
     prints.select_preset_by_name_strict(initial_print_profile_name);

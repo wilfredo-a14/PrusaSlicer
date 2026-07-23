@@ -502,6 +502,22 @@ void ConfigManipulation::toggle_print_sla_options(DynamicPrintConfig* config)
 
     bool corkscrew_en = config->opt_bool("corkscrew_enable");
     toggle_field("corkscrew_box_count", corkscrew_en);
+
+    toggle_field("dlp_pumping_depth", config->opt_bool("dlp_stage_pumping"));
+
+    const bool script_en = config->opt_bool("dlp_dynamic_print_script");
+    for (const char *key : { "dlp_print_script_file", "dlp_print_script_directory",
+                             "dlp_image_directory", "dlp_object_image_files",
+                             "dlp_script_exposure_time", "dlp_script_led_intensity",
+                             "dlp_script_dark_time", "dlp_script_layer_thickness",
+                             "dlp_script_stage_velocity", "dlp_script_stage_acceleration",
+                             "dlp_script_pumping_depth", "dlp_script_injection_volume",
+                             "dlp_script_injection_rate" })
+        toggle_field(key, script_en);
+
+    const bool legacy_auto = config->opt_bool("dlp_legacy_auto_mode");
+    toggle_field("dlp_legacy_auto_print_speed", legacy_auto);
+    toggle_field("dlp_legacy_auto_print_height", legacy_auto);
 }
 
 

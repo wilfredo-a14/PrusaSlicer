@@ -2918,6 +2918,12 @@ void TabPrinter::build_sla()
     optgroup->append_single_option_line("display_mirror_x");
     optgroup->append_single_option_line("display_mirror_y");
 
+    optgroup = page->new_optgroup(L("DLP projector"));
+    for (const char *key : { "dlp_printer_type", "dlp_projection_mode", "dlp_display_cable",
+                             "dlp_bit_depth", "dlp_max_image_upload", "dlp_vp_resync_rate",
+                             "dlp_dual_asic", "dlp_usb_vid", "dlp_usb_pid" })
+        optgroup->append_single_option_line(key);
+
     optgroup = page->new_optgroup(L("Tilt"));
     line = { L("Tilt time"), "" };
     line.append_option(optgroup->get_option("fast_tilt_time"));
@@ -2951,6 +2957,105 @@ void TabPrinter::build_sla()
     optgroup->append_single_option_line("sla_output_precision");
 
     build_print_host_upload_group(page.get());
+
+    page = add_options_page(L("Machine Hardware"), "cog");
+    optgroup = page->new_optgroup(L("Devices"));
+    for (const char *key : { "dlp_stage_hardware", "dlp_pump_hardware", "dlp_light_engine",
+                             "dlp_roll_to_roll" })
+        optgroup->append_single_option_line(key);
+
+    optgroup = page->new_optgroup(L("Serial connections"));
+    line = { "", "" };
+    line.full_width = 1;
+    line.widget = [this](wxWindow* parent) {
+        auto *detect_ports_btn = new wxButton(parent, wxID_ANY, _(L("Detect connected ports")) + dots,
+                                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        wxGetApp().SetWindowVariantForButton(detect_ports_btn);
+        wxGetApp().UpdateDarkUI(detect_ports_btn);
+        detect_ports_btn->SetFont(wxGetApp().normal_font());
+        detect_ports_btn->SetToolTip(_L("Scan for connected serial devices without opening the ports or sending commands."));
+
+        auto *sizer = new wxBoxSizer(wxHORIZONTAL);
+        sizer->Add(detect_ports_btn);
+
+        detect_ports_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            const std::vector<Utils::SerialPortInfo> ports = Utils::scan_serial_ports_extended();
+            BOOST_LOG_TRIVIAL(info) << "DLP serial port detector found " << ports.size() << " device(s)";
+            dlp::debug_log("GUI: serial port detector found " + std::to_string(ports.size()) + " device(s)");
+
+            if (ports.empty()) {
+                InfoDialog(this, _L("Detected serial ports"),
+                           _L("No connected serial devices were found. Check the USB connection and device drivers, then scan again."))
+                    .ShowModal();
+                return;
+            }
+
+            const std::string stage_port = m_config->opt_string("dlp_stage_serial_port");
+            const std::string pump_port  = m_config->opt_string("dlp_pump_serial_port");
+            const std::string pic_port   = m_config->opt_string("dlp_pic_serial_port");
+
+            wxString message = wxString::Format(_L("Found %d connected serial device(s):\n\n"), int(ports.size()));
+            for (size_t i = 0; i < ports.size(); ++i) {
+                const Utils::SerialPortInfo &port = ports[i];
+                message += wxString::Format("%d. ", int(i + 1));
+                message += from_u8(port.friendly_name.empty() ? port.port : port.friendly_name);
+                if (port.friendly_name != port.port)
+                    message += "\n   " + _L("Port") + ": " + from_u8(port.port);
+
+                if (port.id_vendor != static_cast<unsigned>(-1) && port.id_product != static_cast<unsigned>(-1))
+                    message += wxString::Format("\n   USB VID:PID: %04X:%04X", port.id_vendor, port.id_product);
+
+                wxString assignments;
+                if (port.port == stage_port)
+                    assignments += _L("Stage");
+                if (port.port == pump_port)
+                    assignments += (assignments.empty() ? "" : ", ") + _L("Pump");
+                if (port.port == pic_port)
+                    assignments += (assignments.empty() ? "" : ", ") + _L("PIC");
+                if (!assignments.empty())
+                    message += "\n   " + _L("Assigned to") + ": " + assignments;
+
+                message += "\n\n";
+            }
+
+            message += _L("Use the detected port path in the Stage, Pump, or PIC serial port field below.");
+            InfoDialog(this, _L("Detected serial ports"), message).ShowModal();
+        });
+
+        return sizer;
+    };
+    optgroup->append_line(line);
+
+    for (const char *key : { "dlp_stage_serial_port", "dlp_pump_serial_port", "dlp_pic_serial_port",
+                             "dlp_smc_baud", "dlp_stage_baud", "dlp_pump_baud",
+                             "dlp_smc_address", "dlp_pump_address" })
+        optgroup->append_single_option_line(key);
+
+    optgroup = page->new_optgroup(L("KVS scaling"));
+    for (const char *key : { "dlp_kvs_position_scale", "dlp_kvs_velocity_scale",
+                             "dlp_kvs_acceleration_scale" })
+        optgroup->append_single_option_line(key);
+
+    page = add_options_page(L("Manual Control"), "wrench");
+    optgroup = page->new_optgroup(L("Stage"));
+    for (const char *key : { "dlp_manual_stage_type", "dlp_manual_relative_move",
+                             "dlp_manual_absolute_move", "dlp_manual_set_position",
+                             "dlp_manual_min_limit", "dlp_manual_max_limit",
+                             "dlp_manual_velocity", "dlp_manual_acceleration",
+                             "dlp_gcode_endstops", "dlp_custom_stage_command" })
+        optgroup->append_single_option_line(key);
+
+    optgroup = page->new_optgroup(L("Pump"));
+    for (const char *key : { "dlp_pump_target_mode", "dlp_manual_target_time",
+                             "dlp_manual_target_volume", "dlp_manual_infuse_rate",
+                             "dlp_manual_withdraw_rate", "dlp_syringe_volume",
+                             "dlp_custom_pump_command" })
+        optgroup->append_single_option_line(key);
+
+    optgroup = page->new_optgroup(L("Focus and camera"));
+    for (const char *key : { "dlp_focus_calibration_mode", "dlp_focus_starting_step",
+                             "dlp_focus_minimum_step", "dlp_camera_exposure", "dlp_camera_gain" })
+        optgroup->append_single_option_line(key);
 
     const int notes_field_height = 25; // 250
 
@@ -5269,6 +5374,11 @@ void TabSLAMaterial::build()
     optgroup->append_single_option_line("exposure_time");
     optgroup->append_single_option_line("initial_exposure_time");
 
+    optgroup = page->new_optgroup(L("DLP light timing"));
+    for (const char *key : { "dlp_initial_exposure_delay", "dlp_initial_exposure_intensity",
+                             "dlp_uv_intensity", "dlp_dark_time", "dlp_post_exposure_delay" })
+        optgroup->append_single_option_line(key);
+
     optgroup = page->new_optgroup(L("Corrections"));
     auto line = Line{ m_config->def()->get("material_correction")->full_label, "" };
     for (auto& axis : { "X", "Y", "Z" }) {
@@ -5287,6 +5397,14 @@ void TabSLAMaterial::build()
         return description_line_widget(parent, &m_z_correction_to_mm_description);
     };
     optgroup->append_line(line);
+
+    page = add_options_page(L("Resin Delivery"), "resin");
+    optgroup = page->new_optgroup(L("Injection"));
+    for (const char *key : { "dlp_injection_rate", "dlp_volume_per_layer",
+                             "dlp_initial_injection_volume", "dlp_base_infusion_rate",
+                             "dlp_continuous_injection", "dlp_injection_delay_placement",
+                             "dlp_injection_delay" })
+        optgroup->append_single_option_line(key);
 
     add_material_overrides_page();
 

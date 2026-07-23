@@ -2,7 +2,12 @@
 #include <catch2/catch_approx.hpp>
 
 #include "libslic3r/DLPConfig.hpp"
+#include "libslic3r/AppConfig.hpp"
+#include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/Utils.hpp"
+
+#include <boost/filesystem.hpp>
 
 using namespace Slic3r;
 using namespace Slic3r::dlp;
@@ -57,6 +62,32 @@ TEST_CASE("Corkscrew options are present in the global print config definition",
     CHECK(boxes->max == Approx(64.));
 }
 
+TEST_CASE("Legacy DLP settings are backed by native SLA preset configs", "[dlp][config][gui]")
+{
+    SLAPrintObjectConfig print;
+    REQUIRE(print.has("dlp_stage_velocity"));
+    REQUIRE(print.has("dlp_dynamic_print_script"));
+    CHECK(print.dlp_stage_velocity.getFloat() == Approx(10.));
+    CHECK_FALSE(print.dlp_dynamic_print_script.getBool());
+
+    SLAMaterialConfig material;
+    REQUIRE(material.has("dlp_uv_intensity"));
+    REQUIRE(material.has("dlp_injection_rate"));
+    CHECK(material.dlp_uv_intensity.getInt() == 12);
+    CHECK(material.dlp_injection_rate.getFloat() == Approx(5.));
+
+    SLAPrinterConfig printer;
+    REQUIRE(printer.has("dlp_projection_mode"));
+    REQUIRE(printer.has("dlp_stage_serial_port"));
+    CHECK(printer.dlp_projection_mode.value == "Pattern On The Fly (POTF)");
+    CHECK(printer.dlp_stage_serial_port.value == "COM3");
+
+    const ConfigOptionDef *motion_mode = print_config_def.get("dlp_motion_mode");
+    REQUIRE(motion_mode != nullptr);
+    CHECK(motion_mode->type == coString);
+    CHECK(motion_mode->gui_type == ConfigOptionDef::GUIType::select_close);
+}
+
 TEST_CASE("Corkscrew box count can be set within allowed range", "[dlp][config][corkscrew]")
 {
     SLAPrintObjectConfig cfg;
@@ -91,4 +122,27 @@ TEST_CASE("CLI misc config defines export_png_dir", "[dlp][config][cli]")
     REQUIRE(def != nullptr);
     CHECK(def->type == coString);
     CHECK(def->cli == "export-png-dir");
+}
+
+TEST_CASE("DLP application replaces a saved FFF printer selection", "[dlp][config][preset]")
+{
+    const std::string original_data_dir = data_dir();
+    const boost::filesystem::path test_data_dir = boost::filesystem::temp_directory_path() /
+                                                   boost::filesystem::unique_path("prusaslicer-dlp-presets-%%%%-%%%%");
+    for (const char *directory : { "vendor", "print", "sla_print", "filament", "sla_material", "printer", "physical_printer" })
+        boost::filesystem::create_directories(test_data_dir / directory);
+    set_data_dir(test_data_dir.string());
+
+    AppConfig config(AppConfig::EAppMode::Editor);
+    config.set("presets", "printer", "- default FFF -");
+
+    PresetBundle bundle;
+    bundle.load_presets(config, ForwardCompatibilitySubstitutionRule::EnableSilent);
+
+    CHECK(bundle.printers.get_selected_preset_name() == "- default DLP -");
+    CHECK(bundle.printers.get_selected_preset().printer_technology() == ptSLA);
+    CHECK(config.get("presets", "printer") == "- default DLP -");
+
+    set_data_dir(original_data_dir);
+    boost::filesystem::remove_all(test_data_dir);
 }

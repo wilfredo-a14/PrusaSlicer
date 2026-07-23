@@ -299,6 +299,10 @@ public:
     // (then the key is further prefixed with the "filament_" prefix).
     const std::vector<std::string>& extruder_retract_keys() const { return m_extruder_retract_keys; }
 
+    // Used by the DLP option builder, which keeps the large legacy setting table
+    // out of the main PrintConfig.cpp translation unit.
+    ConfigOptionDef* add_dlp_option(const t_config_option_key &key, ConfigOptionType type) { return add(key, type); }
+
 private:
     void init_common_params();
     void init_fff_params();
@@ -1257,6 +1261,8 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionEnum<SLAMaterialSpeed>,      material_print_speed))
     ((ConfigOptionInt,                         zcorrection_layers))
 
+    DLP_MATERIAL_CONFIG_OPTIONS
+
     ((ConfigOptionFloatNullable,               material_ow_support_pillar_diameter))
     ((ConfigOptionFloatNullable,               material_ow_branchingsupport_pillar_diameter))
     ((ConfigOptionFloatNullable,               material_ow_support_head_front_diameter))
@@ -1314,6 +1320,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                      fast_tilt_time))
     ((ConfigOptionFloat,                      slow_tilt_time))
     ((ConfigOptionFloat,                      high_viscosity_tilt_time))
+    DLP_PRINTER_CONFIG_OPTIONS
 //    ((ConfigOptionFloat,                      area_fill))
     ((ConfigOptionFloat,                      min_exposure_time))
     ((ConfigOptionFloat,                      max_exposure_time))
