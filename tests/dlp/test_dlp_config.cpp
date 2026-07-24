@@ -80,7 +80,9 @@ TEST_CASE("Legacy DLP settings are backed by native SLA preset configs", "[dlp][
     REQUIRE(printer.has("dlp_projection_mode"));
     REQUIRE(printer.has("dlp_stage_serial_port"));
     CHECK(printer.dlp_projection_mode.value == "Pattern On The Fly (POTF)");
-    CHECK(printer.dlp_stage_serial_port.value == "COM3");
+    CHECK(printer.dlp_stage_serial_port.value.empty());
+    CHECK(printer.dlp_pump_serial_port.value.empty());
+    CHECK(printer.dlp_pic_serial_port.value.empty());
 
     const ConfigOptionDef *motion_mode = print_config_def.get("dlp_motion_mode");
     REQUIRE(motion_mode != nullptr);

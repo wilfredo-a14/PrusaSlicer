@@ -186,9 +186,9 @@ void PrintConfigDef::init_dlp_params()
     add_dlp_choice(*this, "dlp_light_engine", "Light engine", "DLi 3DLP9000",
                    { "DLi 3DLP9000", "In-Vision Firebird", "Debugging dummy" });
     add_dlp_choice(*this, "dlp_roll_to_roll", "Roll-to-roll hardware", "None", { "None", "Arduino R2R v1" });
-    add_dlp_string(*this, "dlp_stage_serial_port", "Stage serial port", "COM3");
-    add_dlp_string(*this, "dlp_pump_serial_port", "Pump serial port", "COM3");
-    add_dlp_string(*this, "dlp_pic_serial_port", "PIC serial port", "COM3");
+    add_dlp_string(*this, "dlp_stage_serial_port", "Stage serial port");
+    add_dlp_string(*this, "dlp_pump_serial_port", "Pump serial port");
+    add_dlp_string(*this, "dlp_pic_serial_port", "PIC serial port");
     add_dlp_int(*this, "dlp_smc_baud", "SMC baud rate", 57600, 1, 1000000, "baud");
     add_dlp_int(*this, "dlp_stage_baud", "G-code / KVS baud rate", 115200, 1, 1000000, "baud");
     add_dlp_int(*this, "dlp_pump_baud", "Pump baud rate", 9600, 1, 1000000, "baud");

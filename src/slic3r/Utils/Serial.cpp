@@ -7,9 +7,11 @@
 #include "libslic3r/Exception.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <string>
 #include <vector>
 #include <chrono>
+#include <cwchar>
 #include <thread>
 #include <fstream>
 #include <exception>
@@ -71,11 +73,35 @@ static bool looks_like_printer(const std::string &friendly_name)
 	return friendly_name.find("Original Prusa") != std::string::npos;
 }
 
+// macOS exposes a few operating-system endpoints through the same IOKit class as
+// real serial hardware.  They are always present, even when no device is plugged
+// in, and must not be reported as connected hardware.
+static bool is_system_serial_endpoint(const SerialPortInfo &info)
+{
+	std::string name = boost::filesystem::path(info.port).filename().string();
+	std::transform(name.begin(), name.end(), name.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+	return name == "bluetooth-incoming-port" ||
+	       name == "cu.bluetooth-incoming-port" ||
+	       name == "tty.bluetooth-incoming-port" ||
+	       name == "debug-console" ||
+	       name == "cu.debug-console" ||
+	       name == "tty.debug-console" ||
+	       boost::starts_with(name, "firefly");
+}
+
 #if _WIN32
+
+static bool is_windows_com_port(const std::string &port)
+{
+	return std::regex_match(port, std::regex("COM[0-9]+", std::regex_constants::icase));
+}
+
 void parse_hardware_id(const std::string &hardware_id, SerialPortInfo &spi)
 {
 	unsigned vid, pid;
-	std::regex pattern("USB\\\\.*VID_([[:xdigit:]]+)&PID_([[:xdigit:]]+).*");
+	std::regex pattern("USB\\\\.*VID_([[:xdigit:]]+)&PID_([[:xdigit:]]+).*", std::regex_constants::icase);
 	std::smatch matches;
 	if (std::regex_match(hardware_id, matches, pattern)) {
 		vid = std::stoul(matches[1].str(), 0, 16);
@@ -123,33 +149,36 @@ std::vector<SerialPortInfo> scan_serial_ports_extended()
 			SerialPortInfo port_info;
 			// Get the registry key which stores the ports settings.
 			HKEY hDeviceKey = SetupDiOpenDevRegKey(hDeviceInfo, &devInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE);
-			if (hDeviceKey) {
+			if (hDeviceKey != INVALID_HANDLE_VALUE) {
 				// Read in the name of the port.
 				wchar_t pszPortName[4096];
 				DWORD dwSize = sizeof(pszPortName);
 				DWORD dwType = 0;
-                if (RegQueryValueEx(hDeviceKey, L"PortName", NULL, &dwType, (LPBYTE)pszPortName, &dwSize) == ERROR_SUCCESS)
-                    port_info.port = boost::nowide::narrow(pszPortName);
+				if (RegQueryValueEx(hDeviceKey, L"PortName", NULL, &dwType, (LPBYTE)pszPortName, &dwSize) == ERROR_SUCCESS)
+					port_info.port = boost::nowide::narrow(pszPortName);
 				RegCloseKey(hDeviceKey);
-				if (port_info.port.empty())
-					continue;
 			}
+			if (port_info.port.empty())
+				continue;
+			if (!is_windows_com_port(port_info.port))
+				continue;
 
 			// Find the size required to hold the device info.
 			DWORD regDataType;
 			DWORD reqSize = 0;
 			SetupDiGetDeviceRegistryProperty(hDeviceInfo, &devInfoData, SPDRP_HARDWAREID, nullptr, nullptr, 0, &reqSize);
-			std::vector<wchar_t> hardware_id(reqSize > 1 ? reqSize : 1);
+			std::vector<wchar_t> hardware_id(reqSize > sizeof(wchar_t) ?
+				(reqSize / sizeof(wchar_t)) + 1 : 1, L'\0');
 			// Now store it in a buffer.
-			if (! SetupDiGetDeviceRegistryProperty(hDeviceInfo, &devInfoData, SPDRP_HARDWAREID, &regDataType, (BYTE*)hardware_id.data(), reqSize, nullptr))
-                continue;
-            parse_hardware_id(boost::nowide::narrow(hardware_id.data()), port_info);
+			if (SetupDiGetDeviceRegistryProperty(hDeviceInfo, &devInfoData, SPDRP_HARDWAREID, &regDataType,
+					(BYTE*)hardware_id.data(), reqSize, nullptr))
+				parse_hardware_id(boost::nowide::narrow(hardware_id.data()), port_info);
 
 			// Find the size required to hold the friendly name.
 			reqSize = 0;
 			SetupDiGetDeviceRegistryProperty(hDeviceInfo, &devInfoData, SPDRP_FRIENDLYNAME, nullptr, nullptr, 0, &reqSize);
-			std::vector<wchar_t> friendly_name;
-			friendly_name.reserve(reqSize > 1 ? reqSize : 1);
+			std::vector<wchar_t> friendly_name(reqSize > sizeof(wchar_t) ?
+				(reqSize / sizeof(wchar_t)) + 1 : 1, L'\0');
 			// Now store it in a buffer.
 			if (! SetupDiGetDeviceRegistryProperty(hDeviceInfo, &devInfoData, SPDRP_FRIENDLYNAME, nullptr, (BYTE*)friendly_name.data(), reqSize, nullptr)) {
 				port_info.friendly_name = port_info.port;
@@ -158,6 +187,20 @@ std::vector<SerialPortInfo> scan_serial_ports_extended()
 				port_info.is_printer = looks_like_printer(port_info.friendly_name);
 			}
 			output.emplace_back(std::move(port_info));
+		}
+		SetupDiDestroyDeviceInfoList(hDeviceInfo);
+	}
+
+	// QueryDosDevice also sees virtual COM endpoints whose SetupAPI records may
+	// not expose the expected Ports-class registry metadata.
+	std::vector<wchar_t> dos_devices(65536, L'\0');
+	const DWORD dos_devices_size = QueryDosDeviceW(nullptr, dos_devices.data(), DWORD(dos_devices.size()));
+	if (dos_devices_size != 0) {
+		for (const wchar_t *name = dos_devices.data(); *name != L'\0'; name += std::wcslen(name) + 1) {
+			const std::string port = boost::nowide::narrow(name);
+			if (is_windows_com_port(port) &&
+				std::none_of(output.begin(), output.end(), [&port](const SerialPortInfo &info) { return info.port == port; }))
+				output.emplace_back(port);
 		}
 	}
 #elif __APPLE__
@@ -223,6 +266,17 @@ std::vector<SerialPortInfo> scan_serial_ports_extended()
 			}
 		}
 	}
+
+	// Keep ports visible even if a third-party driver creates the /dev callout
+	// node without publishing the usual IOSerialBSDClient metadata.
+	for (const auto &dir_entry : boost::filesystem::directory_iterator(boost::filesystem::path("/dev"))) {
+		const std::string name = dir_entry.path().filename().string();
+		if (!boost::starts_with(name, "cu."))
+			continue;
+		const std::string path = dir_entry.path().string();
+		if (std::none_of(output.begin(), output.end(), [&path](const SerialPortInfo &info) { return info.port == path; }))
+			output.emplace_back(path);
+	}
 #else
     // UNIX / Linux
     std::initializer_list<const char*> prefixes { "ttyUSB" , "ttyACM", "tty.", "cu.", "rfcomm" };
@@ -257,12 +311,129 @@ std::vector<SerialPortInfo> scan_serial_ports_extended()
     }
 #endif
 
-    output.erase(std::remove_if(output.begin(), output.end(), 
-        [](const SerialPortInfo &info) {
-            return boost::starts_with(info.port, "Bluetooth") || boost::starts_with(info.port, "FireFly"); 
-        }),
+    output.erase(std::remove_if(output.begin(), output.end(), is_system_serial_endpoint),
         output.end());
     return output;
+}
+
+std::vector<USBDeviceInfo> scan_usb_devices()
+{
+	std::vector<USBDeviceInfo> output;
+
+#ifdef _WIN32
+	HDEVINFO device_info = SetupDiGetClassDevs(nullptr, L"USB", nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES);
+	if (device_info != INVALID_HANDLE_VALUE) {
+		SP_DEVINFO_DATA data = { 0 };
+		data.cbSize = sizeof(data);
+		for (int index = 0; SetupDiEnumDeviceInfo(device_info, index, &data); ++index) {
+			DWORD type = 0;
+			DWORD size = 0;
+			SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_HARDWAREID, nullptr, nullptr, 0, &size);
+			std::vector<wchar_t> hardware_id(size > sizeof(wchar_t) ? size / sizeof(wchar_t) + 1 : 1, L'\0');
+			if (!SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_HARDWAREID, &type,
+					(BYTE*)hardware_id.data(), size, nullptr))
+				continue;
+
+			SerialPortInfo ids;
+			parse_hardware_id(boost::nowide::narrow(hardware_id.data()), ids);
+			if (ids.id_vendor == static_cast<unsigned>(-1) || ids.id_product == static_cast<unsigned>(-1))
+				continue;
+
+			USBDeviceInfo usb;
+			usb.id_vendor = ids.id_vendor;
+			usb.id_product = ids.id_product;
+			size = 0;
+			SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_FRIENDLYNAME, nullptr, nullptr, 0, &size);
+			std::vector<wchar_t> name(size > sizeof(wchar_t) ? size / sizeof(wchar_t) + 1 : 1, L'\0');
+			if (!SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_FRIENDLYNAME, &type,
+					(BYTE*)name.data(), size, nullptr)) {
+				size = 0;
+				SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_DEVICEDESC, nullptr, nullptr, 0, &size);
+				name.assign(size > sizeof(wchar_t) ? size / sizeof(wchar_t) + 1 : 1, L'\0');
+				SetupDiGetDeviceRegistryProperty(device_info, &data, SPDRP_DEVICEDESC, &type,
+					(BYTE*)name.data(), size, nullptr);
+			}
+			usb.friendly_name = boost::nowide::narrow(name.data());
+			output.emplace_back(std::move(usb));
+		}
+		SetupDiDestroyDeviceInfoList(device_info);
+	}
+#elif __APPLE__
+	auto read_string = [](io_object_t device, CFStringRef key) {
+		std::string value;
+		CFTypeRef property = IORegistryEntryCreateCFProperty(device, key, kCFAllocatorDefault, 0);
+		if (property != nullptr) {
+			if (CFGetTypeID(property) == CFStringGetTypeID()) {
+				char buffer[256];
+				if (CFStringGetCString((CFStringRef)property, buffer, sizeof(buffer), kCFStringEncodingUTF8))
+					value = buffer;
+			}
+			CFRelease(property);
+		}
+		return value;
+	};
+	auto read_number = [](io_object_t device, CFStringRef key) {
+		unsigned value = static_cast<unsigned>(-1);
+		CFTypeRef property = IORegistryEntryCreateCFProperty(device, key, kCFAllocatorDefault, 0);
+		if (property != nullptr) {
+			int number = 0;
+			if (CFGetTypeID(property) == CFNumberGetTypeID() &&
+				CFNumberGetValue((CFNumberRef)property, kCFNumberIntType, &number))
+				value = unsigned(number);
+			CFRelease(property);
+		}
+		return value;
+	};
+
+	CFMutableDictionaryRef matching = IOServiceMatching("IOUSBHostDevice");
+	io_iterator_t iterator = IO_OBJECT_NULL;
+	if (matching != nullptr && IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) == KERN_SUCCESS) {
+		io_object_t device;
+		while ((device = IOIteratorNext(iterator)) != IO_OBJECT_NULL) {
+			USBDeviceInfo usb;
+			usb.friendly_name = read_string(device, CFSTR("USB Product Name"));
+			usb.manufacturer = read_string(device, CFSTR("USB Vendor Name"));
+			usb.serial_number = read_string(device, CFSTR("USB Serial Number"));
+			if (usb.serial_number.empty())
+				usb.serial_number = read_string(device, CFSTR("kUSBSerialNumberString"));
+			usb.id_vendor = read_number(device, CFSTR("idVendor"));
+			usb.id_product = read_number(device, CFSTR("idProduct"));
+			if (!usb.friendly_name.empty() || usb.id_vendor != static_cast<unsigned>(-1))
+				output.emplace_back(std::move(usb));
+			IOObjectRelease(device);
+		}
+		IOObjectRelease(iterator);
+	}
+#elif defined(__linux__)
+	const boost::filesystem::path usb_root("/sys/bus/usb/devices");
+	if (boost::filesystem::exists(usb_root)) {
+		auto read_property = [](const boost::filesystem::path &device, const char *name) {
+			std::ifstream file((device / name).string());
+			std::string value;
+			std::getline(file, value);
+			return value;
+		};
+		for (const auto &entry : boost::filesystem::directory_iterator(usb_root)) {
+			const std::string vendor = read_property(entry.path(), "idVendor");
+			const std::string product = read_property(entry.path(), "idProduct");
+			if (vendor.empty() || product.empty())
+				continue;
+			USBDeviceInfo usb;
+			try {
+				usb.id_vendor = std::stoul(vendor, nullptr, 16);
+				usb.id_product = std::stoul(product, nullptr, 16);
+			} catch (const std::exception &) {
+				continue;
+			}
+			usb.friendly_name = read_property(entry.path(), "product");
+			usb.manufacturer = read_property(entry.path(), "manufacturer");
+			usb.serial_number = read_property(entry.path(), "serial");
+			output.emplace_back(std::move(usb));
+		}
+	}
+#endif
+
+	return output;
 }
 
 std::vector<std::string> scan_serial_ports()

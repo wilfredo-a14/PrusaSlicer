@@ -45,6 +45,8 @@
 #include <wx/button.h>
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
+#include <wx/stattext.h>
+#include <wx/utils.h>
 
 #include <wx/bmpcbox.h>
 #include <wx/bmpbuttn.h>
@@ -2968,39 +2970,77 @@ void TabPrinter::build_sla()
     line = { "", "" };
     line.full_width = 1;
     line.widget = [this](wxWindow* parent) {
-        auto *detect_ports_btn = new wxButton(parent, wxID_ANY, _(L("Detect connected ports")) + dots,
+        auto *detect_ports_btn = new wxButton(parent, wxID_ANY, _(L("Scan connected devices")) + dots,
                                               wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
         wxGetApp().SetWindowVariantForButton(detect_ports_btn);
         wxGetApp().UpdateDarkUI(detect_ports_btn);
         detect_ports_btn->SetFont(wxGetApp().normal_font());
-        detect_ports_btn->SetToolTip(_L("Scan for connected serial devices without opening the ports or sending commands."));
+        detect_ports_btn->SetToolTip(_L("Scan every available serial/COM port and attached USB device without opening ports, sending commands, or selecting a default."));
+
+        auto *scan_status = new wxStaticText(parent, wxID_ANY, _L("Waiting to scan."));
+        scan_status->SetFont(wxGetApp().normal_font());
 
         auto *sizer = new wxBoxSizer(wxHORIZONTAL);
         sizer->Add(detect_ports_btn);
+        sizer->Add(scan_status, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 10);
 
-        detect_ports_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        detect_ports_btn->Bind(wxEVT_BUTTON, [this, detect_ports_btn, scan_status, parent](wxCommandEvent&) {
+            detect_ports_btn->Disable();
+            scan_status->SetLabel(_L("Scanning serial/COM ports and USB devices..."));
+            parent->Layout();
+            wxYieldIfNeeded();
+
             const std::vector<Utils::SerialPortInfo> ports = Utils::scan_serial_ports_extended();
+            const std::vector<Utils::USBDeviceInfo> usb_devices = Utils::scan_usb_devices();
             BOOST_LOG_TRIVIAL(info) << "DLP serial port detector found " << ports.size() << " device(s)";
             dlp::debug_log("GUI: serial port detector found " + std::to_string(ports.size()) + " device(s)");
 
-            if (ports.empty()) {
-                InfoDialog(this, _L("Detected serial ports"),
-                           _L("No connected serial devices were found. Check the USB connection and device drivers, then scan again."))
-                    .ShowModal();
-                return;
-            }
+            detect_ports_btn->Enable();
+            scan_status->SetLabel(wxString::Format(_L("Scan complete: %d serial/COM port(s), %d USB device(s)."),
+                                                  int(ports.size()), int(usb_devices.size())));
+            parent->Layout();
 
             const std::string stage_port = m_config->opt_string("dlp_stage_serial_port");
             const std::string pump_port  = m_config->opt_string("dlp_pump_serial_port");
             const std::string pic_port   = m_config->opt_string("dlp_pic_serial_port");
 
-            wxString message = wxString::Format(_L("Found %d connected serial device(s):\n\n"), int(ports.size()));
+            auto port_is_connected = [&ports](const std::string &configured_port) {
+                return std::any_of(ports.begin(), ports.end(), [&configured_port](const Utils::SerialPortInfo &port) {
+                    return port.port == configured_port;
+                });
+            };
+            wxString message = _L("Hardware scan complete.\n\nConfigured serial-port assignments:");
+            auto append_status = [&message, &port_is_connected](const wxString &device, const std::string &configured_port) {
+                message += "\n" + device + ": ";
+                if (configured_port.empty()) {
+                    message += _L("Waiting for selection");
+                } else {
+                    message += from_u8(configured_port);
+                    message += port_is_connected(configured_port) ? _L(" (present)") : _L(" (not found in this scan)");
+                }
+            };
+            append_status(_L("Stage"), stage_port);
+            append_status(_L("Pump"), pump_port);
+            append_status(_L("PIC"), pic_port);
+
+            if (ports.empty() && usb_devices.empty()) {
+                message += "\n\n" + _L("No serial/COM ports or USB devices were found. Check the connection and device drivers, then scan again.");
+                InfoDialog(this, _L("Hardware scan"), message).ShowModal();
+                return;
+            }
+
+            message += wxString::Format(_L("\n\nDetected serial/COM ports (%d):\n"), int(ports.size()));
+            if (ports.empty())
+                message += _L("None. Attached USB hardware may not provide a serial/COM port.\n");
             for (size_t i = 0; i < ports.size(); ++i) {
                 const Utils::SerialPortInfo &port = ports[i];
-                message += wxString::Format("%d. ", int(i + 1));
-                message += from_u8(port.friendly_name.empty() ? port.port : port.friendly_name);
-                if (port.friendly_name != port.port)
-                    message += "\n   " + _L("Port") + ": " + from_u8(port.port);
+                message += wxString::Format("\n%d. ", int(i + 1));
+                message += _L("Port") + ": " + from_u8(port.port);
+                message += "\n   " + _L("Device") + ": ";
+                if (port.friendly_name.empty())
+                    message += _L("Unknown serial device");
+                else
+                    message += from_u8(port.friendly_name);
 
                 if (port.id_vendor != static_cast<unsigned>(-1) && port.id_product != static_cast<unsigned>(-1))
                     message += wxString::Format("\n   USB VID:PID: %04X:%04X", port.id_vendor, port.id_product);
@@ -3018,8 +3058,24 @@ void TabPrinter::build_sla()
                 message += "\n\n";
             }
 
-            message += _L("Use the detected port path in the Stage, Pump, or PIC serial port field below.");
-            InfoDialog(this, _L("Detected serial ports"), message).ShowModal();
+            message += wxString::Format(_L("Detected USB devices (%d):\n"), int(usb_devices.size()));
+            if (usb_devices.empty())
+                message += _L("None.\n");
+            for (size_t i = 0; i < usb_devices.size(); ++i) {
+                const Utils::USBDeviceInfo &usb = usb_devices[i];
+                message += wxString::Format("\n%d. ", int(i + 1));
+                message += usb.friendly_name.empty() ? _L("Unknown USB device") : from_u8(usb.friendly_name);
+                if (!usb.manufacturer.empty())
+                    message += "\n   " + _L("Manufacturer") + ": " + from_u8(usb.manufacturer);
+                if (usb.id_vendor != static_cast<unsigned>(-1) && usb.id_product != static_cast<unsigned>(-1))
+                    message += wxString::Format("\n   USB VID:PID: %04X:%04X", usb.id_vendor, usb.id_product);
+                if (!usb.serial_number.empty())
+                    message += "\n   " + _L("Serial number") + ": " + from_u8(usb.serial_number);
+                message += "\n";
+            }
+
+            message += "\n" + _L("A USB device is listed even when it has no serial/COM port. Only paths in the serial/COM section can be assigned to Stage, Pump, or PIC. The scan does not select a default.");
+            InfoDialog(this, _L("Hardware scan"), message).ShowModal();
         });
 
         return sizer;
