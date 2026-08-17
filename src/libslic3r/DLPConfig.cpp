@@ -8,18 +8,30 @@
 
 #include "format.hpp"
 
+#include <algorithm>
+
 namespace Slic3r {
 
 namespace {
 
-constexpr const char *DLP_TOOLTIP = "DLP printer setting migrated from CLIP3DPrinterGUI.";
+constexpr const char *DLP_TOOLTIP = "Printer setting migrated from CLIP3DPrinterGUI.";
+
+std::string print_cli_name(const char *key)
+{
+    std::string name(key);
+    if (name.compare(0, 4, "dlp_") == 0)
+        name.erase(0, 4);
+    std::replace(name.begin(), name.end(), '_', '-');
+    return name;
+}
 
 ConfigOptionDef *add_dlp_bool(PrintConfigDef &config, const char *key, const char *label, bool value)
 {
     ConfigOptionDef *def = config.add_dlp_option(key, coBool);
     def->label = label;
-    def->category = L("DLP");
+    def->category = L("Process");
     def->tooltip = DLP_TOOLTIP;
+    def->cli = print_cli_name(key);
     def->mode = comSimple;
     def->set_default_value(new ConfigOptionBool(value));
     return def;
@@ -30,8 +42,9 @@ ConfigOptionDef *add_dlp_int(PrintConfigDef &config, const char *key, const char
 {
     ConfigOptionDef *def = config.add_dlp_option(key, coInt);
     def->label = label;
-    def->category = L("DLP");
+    def->category = L("Process");
     def->tooltip = DLP_TOOLTIP;
+    def->cli = print_cli_name(key);
     def->mode = comSimple;
     def->min = minimum;
     def->max = maximum;
@@ -46,8 +59,9 @@ ConfigOptionDef *add_dlp_float(PrintConfigDef &config, const char *key, const ch
 {
     ConfigOptionDef *def = config.add_dlp_option(key, coFloat);
     def->label = label;
-    def->category = L("DLP");
+    def->category = L("Process");
     def->tooltip = DLP_TOOLTIP;
+    def->cli = print_cli_name(key);
     def->mode = comSimple;
     def->min = minimum;
     def->max = maximum;
@@ -62,8 +76,9 @@ ConfigOptionDef *add_dlp_string(PrintConfigDef &config, const char *key, const c
 {
     ConfigOptionDef *def = config.add_dlp_option(key, coString);
     def->label = label;
-    def->category = L("DLP");
+    def->category = L("Process");
     def->tooltip = DLP_TOOLTIP;
+    def->cli = print_cli_name(key);
     def->mode = comSimple;
     def->set_default_value(new ConfigOptionString(value));
     return def;
@@ -84,7 +99,7 @@ void PrintConfigDef::init_dlp_params()
     ConfigOptionDef* def;
 
     dlp::debug_log(Slic3r::format(
-        "DLP config: registering corkscrew options "
+        "Print config: registering corkscrew options "
         "(display defaults %1%x%2% px, %3%x%4% mm)",
         dlp::DISPLAY_PIXELS_X,
         dlp::DISPLAY_PIXELS_Y,
@@ -113,7 +128,92 @@ void PrintConfigDef::init_dlp_params()
         def->set_default_value(default_opt);
     }
 
-    // SLA print preset: settings which describe how a particular job is run.
+    def = this->add("multibox_angle_between_boxes", coFloat);
+    def->label = L("Angle between boxes");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Angular spacing between static projection boxes in degrees.");
+    def->sidetext = L("°");
+    def->min = 0;
+    def->max = 360;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(90.));
+
+    def = this->add("multibox_box_height_px", coInt);
+    def->label = L("Box height");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Height of each exported projection image in pixels.");
+    def->sidetext = L("px");
+    def->min = 1;
+    def->max = 8192;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(1600));
+
+    def = this->add("multibox_box_width_px", coInt);
+    def->label = L("Box width");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Width of each exported projection image in pixels.");
+    def->sidetext = L("px");
+    def->min = 1;
+    def->max = 8192;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(2560));
+
+    def = this->add("multibox_fab_height_mm", coFloat);
+    def->label = L("Fabrication area height");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Height of the fabrication area used to place projection boxes.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(12.8));
+
+    def = this->add("multibox_fab_width_mm", coFloat);
+    def->label = L("Fabrication area width");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Width of the fabrication area used to place projection boxes.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(12.8));
+
+    def = this->add("multibox_num_boxes", coInt);
+    def->label = L("Number of boxes");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Number of static projection boxes per layer.");
+    def->min = 1;
+    def->max = 16;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(4));
+
+    def = this->add("multibox_pixel_scale_um", coFloat);
+    def->label = L("Pixel scale");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Microns per pixel for converting box dimensions to millimeters.");
+    def->sidetext = L("µm");
+    def->min = 0.01;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(3.78));
+
+    def = this->add("multibox_radius_mm", coFloat);
+    def->label = L("Box radius");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Distance from fabrication area center to each box center along the rotary path.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(4.76));
+
+    def = this->add("multibox_starting_angle", coFloat);
+    def->label = L("Starting angle");
+    def->category = L("Multi-box export");
+    def->tooltip = L("Angle of the first projection box in degrees.");
+    def->sidetext = L("°");
+    def->min = 0;
+    def->max = 360;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.));
+
+    // DLP print preset: settings which describe how a particular job is run.
     add_dlp_float(*this, "dlp_starting_position", "Starting position", 5., 0., 99.99, "mm");
     add_dlp_choice(*this, "dlp_motion_mode", "Motion mode", "Stepped", { "Stepped", "Continuous" });
     add_dlp_float(*this, "dlp_stage_velocity", "Stage velocity", 10., 0., 10., "mm/s");
@@ -151,7 +251,7 @@ void PrintConfigDef::init_dlp_params()
     add_dlp_string(*this, "dlp_log_directory", "Log directory");
     add_dlp_string(*this, "dlp_log_name", "Log name", "CLIPGUITEST");
 
-    // SLA material preset: exposure and delivery values which vary with resin.
+    // DLP material preset: exposure and delivery values which vary with resin.
     add_dlp_float(*this, "dlp_initial_exposure_delay", "Initial exposure delay", 0., 0., 99., "s");
     add_dlp_int(*this, "dlp_initial_exposure_intensity", "Initial exposure intensity", 10, 0, 255);
     add_dlp_int(*this, "dlp_uv_intensity", "UV intensity", 12, 0, 255);
@@ -167,8 +267,8 @@ void PrintConfigDef::init_dlp_params()
                    { "Off", "Pre-movement", "Post-movement" });
     add_dlp_float(*this, "dlp_injection_delay", "Injection delay", 0., 0., 9999., "ms");
 
-    // SLA printer preset: projector, controller, port, and calibration values.
-    add_dlp_choice(*this, "dlp_printer_type", "DLP printer type", "CLIP 30 µm", { "CLIP 30 µm", "iCLIP" });
+    // DLP printer preset: projector, controller, port, and calibration values.
+    add_dlp_choice(*this, "dlp_printer_type", "Printer type", "CLIP 30 µm", { "CLIP 30 µm", "iCLIP" });
     add_dlp_choice(*this, "dlp_projection_mode", "Projection mode", "Pattern On The Fly (POTF)",
                    { "Pattern On The Fly (POTF)", "Video Pattern (VP)", "Video" });
     add_dlp_choice(*this, "dlp_display_cable", "Display cable", "None", { "None", "HDMI", "DisplayPort" });
@@ -176,8 +276,10 @@ void PrintConfigDef::init_dlp_params()
     add_dlp_int(*this, "dlp_max_image_upload", "Maximum image upload", 50, 0, 399, "patterns");
     add_dlp_int(*this, "dlp_vp_resync_rate", "VP resync rate", 24, 1, 240, "patterns");
     add_dlp_bool(*this, "dlp_dual_asic", "Dual ASIC", true);
-    add_dlp_string(*this, "dlp_usb_vid", "DLP USB VID", "0x0451");
-    add_dlp_string(*this, "dlp_usb_pid", "DLP USB PID", "0xC900");
+    def = add_dlp_string(*this, "dlp_usb_vid", "USB VID", "0x0451");
+    def->cli = ConfigOptionDef::nocli;
+    def = add_dlp_string(*this, "dlp_usb_pid", "USB PID", "0xC900");
+    def->cli = ConfigOptionDef::nocli;
 
     add_dlp_choice(*this, "dlp_stage_hardware", "Stage hardware", "Newport GTS70V (SMC100CC)",
                    { "Newport GTS70V (SMC100CC)", "Thorlabs KVS30/M", "G-code lead screw", "Debugging dummy" });
@@ -224,7 +326,7 @@ void PrintConfigDef::init_dlp_params()
     add_dlp_int(*this, "dlp_camera_exposure", "Camera exposure", 1000, 0, 100000000);
     add_dlp_float(*this, "dlp_camera_gain", "Camera gain", 33., 0., 100., "dB");
 
-    dlp::debug_log("DLP config: registered native print, material, and printer options");
+    dlp::debug_log("Print config: registered native print, material, and printer options");
 }
 
 } // namespace Slic3r

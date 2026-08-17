@@ -500,7 +500,7 @@ static const FileWildcards file_wildcards_by_type[FT_SIZE] = {
 
     /* FT_TEX */     { "Texture"sv,         { ".png"sv, ".svg"sv } },
 
-    /* FT_SL1 (deprecated, overriden by sla_wildcards) */     { "Masked SLA files"sv, { ".sl1"sv, ".sl1s"sv, ".pwmx"sv } },
+    /* FT_SL1 */                                              { "Print files"sv, { ".sl1"sv, ".sl1s"sv, ".pwmx"sv } },
 
     /* FT_ZIP */     { "Zip files"sv, { ".zip"sv } },
 };
@@ -1020,7 +1020,7 @@ void GUI_App::legacy_app_config_vendor_check()
         return;
     }
 
-    BOOST_LOG_TRIVIAL(warning) << "PrusaSlicer has found legacy SLA printers. The printers will be "
+    BOOST_LOG_TRIVIAL(warning) << "PrusaSlicer has found legacy printer presets. The printers will be "
                                   "moved to new vendor and its ini file will be installed. Configuration snapshot will be taken.";
 
      // Take snapshot now, since creation of new vendors in appconfig, snapshots wont be compatible in older slicers.
@@ -1556,7 +1556,9 @@ bool GUI_App::on_init_inner()
     
     std::string delayed_error_load_presets;
     // Suppress the '- default -' presets.
-    preset_bundle->set_default_suppressed(app_config->get_bool("no_defaults"));
+    // The three built-in DLP presets are the guaranteed baseline for this
+    // single-technology product and must always remain selectable.
+    preset_bundle->set_default_suppressed(false);
     try {
         // Enable all substitutions (in both user and system profiles), but log the substitutions in user profiles only.
         // If there are substitutions in system profiles, then a "reconfigure" event shall be triggered, which will force
@@ -2618,38 +2620,13 @@ Tab* GUI_App::get_tab(Preset::Type type)
 
 ConfigOptionMode GUI_App::get_mode()
 {
-    if (!app_config->has("view_mode"))
-        return comSimple;
-
-    const auto mode = app_config->get("view_mode");
-    return mode == "expert" ? comExpert : 
-           mode == "simple" ? comSimple : comAdvanced;
+    return comSimple;
 }
 
-bool GUI_App::save_mode(const /*ConfigOptionMode*/int mode) 
+bool GUI_App::save_mode(const /*ConfigOptionMode*/int /*mode*/)
 {
-    const std::string mode_str = mode == comExpert ? "expert" :
-                                 mode == comSimple ? "simple" : "advanced";
-
-    auto can_switch_to_simple = [](Model& model) {
-        for (const ModelObject* model_object : model.objects)
-            if (model_object->volumes.size() > 1) {
-                for (size_t i = 1; i < model_object->volumes.size(); ++i)
-                    if (!model_object->volumes[i]->is_support_modifier())
-                        return false;
-            }
-        return true;
-    };
-
-    if (mode == comSimple && !can_switch_to_simple(model())) {
-        show_info(nullptr,
-            _L("Simple mode supports manipulation with single-part object(s)\n"
-            "or object(s) with support modifiers only.") + "\n\n" +
-            _L("Please check your object list before mode changing."),
-            _L("Change application mode"));
-        return false;
-    }
-    app_config->set("view_mode", mode_str);
+    // Beginner is the sole application mode in this product.
+    app_config->set("view_mode", "simple");
     update_mode();
     return true;
 }
@@ -2677,11 +2654,8 @@ wxMenu* GUI_App::get_config_menu(MainFrame* main_frame)
     auto local_menu = new wxMenu();
     wxWindowID config_id_base = wxWindow::NewControlId(int(ConfigMenuCnt));
 
-    const wxString config_wizard_name = _(ConfigWizard::name(true));
-    const wxString config_wizard_tooltip = from_u8((boost::format(_u8L("Run %s")) % config_wizard_name).str());
     // Cmd+, is standard on OS X - what about other operating systems?
     if (is_editor()) {
-        local_menu->Append(config_id_base + ConfigMenuWizard, config_wizard_name + dots, config_wizard_tooltip);
         local_menu->Append(config_id_base + ConfigMenuSnapshots, _L("&Configuration Snapshots") + dots, _L("Inspect / activate configuration snapshots"));
         local_menu->Append(config_id_base + ConfigMenuTakeSnapshot, _L("Take Configuration &Snapshot"), _L("Capture a configuration snapshot"));
         local_menu->Append(config_id_base + ConfigMenuUpdateConf, _L("Check for Configuration Updates"), _L("Check for configuration updates"));
@@ -2701,14 +2675,6 @@ wxMenu* GUI_App::get_config_menu(MainFrame* main_frame)
 
     local_menu->AppendSeparator();
     local_menu->Append(config_id_base + ConfigMenuLanguage, _L("&Language"));
-    if (is_editor()) {
-        local_menu->AppendSeparator();
-        local_menu->Append(config_id_base + ConfigMenuFlashFirmware, _L("Flash Printer &Firmware"), _L("Upload a firmware image into an Arduino based printer"));
-        // TODO: for when we're able to flash dictionaries
-        // local_menu->Append(config_id_base + FirmwareMenuDict,  _L("Flash Language File"),    _L("Upload a language dictionary file into a Prusa printer"));
-    }
-    local_menu->Append(config_id_base + ConfigMenuWifiConfigFile, _L("Wi-Fi Configuration File"), _L("Generate a file to be loaded by a Prusa printer to configure its Wi-Fi connection."));
-
     local_menu->Bind(wxEVT_MENU, [this, config_id_base](wxEvent &event) {
         switch (event.GetId() - config_id_base) {
         case ConfigMenuWizard:
@@ -3307,7 +3273,7 @@ bool GUI_App::may_switch_to_SLA_preset(const wxString& caption)
 {
     if (model_has_parameter_modifiers_in_objects(model())) {
         show_info(nullptr,
-            _L("It's impossible to print object(s) which contains parameter modifiers with SLA technology.") + "\n\n" +
+            _L("Printing does not support objects containing parameter modifiers.") + "\n\n" +
             _L("Please check your object list before preset changing."),
             caption);
         return false;

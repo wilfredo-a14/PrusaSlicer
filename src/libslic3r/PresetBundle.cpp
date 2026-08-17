@@ -47,9 +47,9 @@ const char *PresetBundle::PRUSA_BUNDLE = "PrusaResearch";
 PresetBundle::PresetBundle() :
     prints(Preset::TYPE_PRINT, Preset::print_options(), static_cast<const PrintRegionConfig&>(FullPrintConfig::defaults())),
     filaments(Preset::TYPE_FILAMENT, Preset::filament_options(), static_cast<const PrintRegionConfig&>(FullPrintConfig::defaults())),
-    sla_materials(Preset::TYPE_SLA_MATERIAL, Preset::sla_material_options(), static_cast<const SLAMaterialConfig&>(SLAFullPrintConfig::defaults())), 
-    sla_prints(Preset::TYPE_SLA_PRINT, Preset::sla_print_options(), static_cast<const SLAPrintObjectConfig&>(SLAFullPrintConfig::defaults())),
-    printers(Preset::TYPE_PRINTER, Preset::printer_options(), static_cast<const PrintRegionConfig&>(FullPrintConfig::defaults()), "- default FFF -"),
+    sla_materials(Preset::TYPE_SLA_MATERIAL, Preset::sla_material_options(), static_cast<const SLAMaterialConfig&>(SLAFullPrintConfig::defaults()), "Material"),
+    sla_prints(Preset::TYPE_SLA_PRINT, Preset::sla_print_options(), static_cast<const SLAPrintObjectConfig&>(SLAFullPrintConfig::defaults()), "Standard"),
+    printers(Preset::TYPE_PRINTER, Preset::sla_printer_options(), static_cast<const SLAPrinterConfig&>(SLAFullPrintConfig::defaults()), "Printer"),
     physical_printers(PhysicalPrinter::printer_options(), this)
 {
     // The following keys are handled by the UI, they do not have a counterpart in any StaticPrintConfig derived classes,
@@ -82,26 +82,17 @@ PresetBundle::PresetBundle() :
     this->sla_prints.default_preset().compatible_printers_condition();
     this->sla_prints.default_preset().inherits();
 
-    this->printers.add_default_preset(Preset::sla_printer_options(), static_cast<const SLAMaterialConfig&>(SLAFullPrintConfig::defaults()), "- default DLP -");
-    this->printers.preset(0).printer_technology_ref() = ptFFF;
-    this->printers.preset(1).printer_technology_ref() = ptSLA;
-    for (size_t i = 0; i < 2; ++ i) {
-		// The following ugly switch is to avoid printers.preset(0) to return the edited instance, as the 0th default is the current one.
-		Preset &preset = this->printers.default_preset(i);
+    this->printers.default_preset(0).printer_technology_ref() = ptSLA;
+    {
+		Preset &preset = this->printers.default_preset(0);
         for (const char *key : { 
             "printer_settings_id", "printer_vendor", "printer_model", "printer_variant", "thumbnails",
             //FIXME the following keys are only created here for compatibility to be able to parse legacy Printer profiles.
             // These keys are converted to Physical Printer profile. After the conversion, they shall be removed.
             "host_type", "print_host", "printhost_apikey", "printhost_cafile"})
             preset.config.optptr(key, true);
-        if (i == 0) {
-            preset.config.optptr("default_print_profile", true);
-            preset.config.option<ConfigOptionStrings>("default_filament_profile", true);
-        } else {
-            preset.config.optptr("default_sla_print_profile", true);
-            preset.config.optptr("default_sla_material_profile", true);
-        }
-        // default_sla_material_profile
+        preset.config.optptr("default_sla_print_profile", true);
+        preset.config.optptr("default_sla_material_profile", true);
         preset.inherits();
     }
 
@@ -110,7 +101,7 @@ PresetBundle::PresetBundle() :
     this->sla_prints   .select_preset(0);
     this->filaments    .select_preset(0);
     this->sla_materials.select_preset(0);
-    this->printers     .select_preset(1);
+    this->printers     .select_preset(0);
 
     this->project_config.apply_only(FullPrintConfig::defaults(), s_project_options);
 }
@@ -348,6 +339,27 @@ PresetsConfigSubstitutions PresetBundle::load_presets(AppConfig &config, Forward
 
 // Load system presets into this PresetBundle.
 // For each vendor, there will be a single PresetBundle loaded.
+static bool config_bundle_contains_dlp_printer(const boost::filesystem::path &path)
+{
+    boost::nowide::ifstream input(path.string());
+    std::string line;
+    while (std::getline(input, line)) {
+        if (const size_t comment = line.find('#'); comment != std::string::npos)
+            line.erase(comment);
+        boost::algorithm::trim(line);
+        if (!boost::algorithm::starts_with(line, "technology"))
+            continue;
+        const size_t separator = line.find('=');
+        if (separator == std::string::npos)
+            continue;
+        std::string value = line.substr(separator + 1);
+        boost::algorithm::trim(value);
+        if (boost::algorithm::iequals(value, "SLA") || boost::algorithm::iequals(value, "DLP"))
+            return true;
+    }
+    return false;
+}
+
 std::pair<PresetsConfigSubstitutions, std::string> PresetBundle::load_system_presets(ForwardCompatibilitySubstitutionRule compatibility_rule)
 {
     if (compatibility_rule == ForwardCompatibilitySubstitutionRule::EnableSystemSilent)
@@ -364,6 +376,10 @@ std::pair<PresetsConfigSubstitutions, std::string> PresetBundle::load_system_pre
     bool                        first = true;
     for (auto &dir_entry : boost::filesystem::directory_iterator(dir))
         if (Slic3r::is_ini_file(dir_entry)) {
+            // This product only exposes DLP printing. Do not parse or merge
+            // installed vendor bundles for unrelated printer technologies.
+            if (!config_bundle_contains_dlp_printer(dir_entry.path()))
+                continue;
             std::string name = dir_entry.path().filename().string();
             // Remove the .ini suffix.
             name.erase(name.size() - 4);
@@ -674,10 +690,11 @@ void PresetBundle::load_selections(AppConfig &config, const PresetPreferences& p
     const Preset *initial_printer = printers.find_preset(initial_printer_profile_name);
     // If executed due to a Config Wizard update, preferred_printer contains the first newly installed printer, otherwise nullptr.
     const Preset *preferred_printer = printers.find_system_preset_by_model_and_variant(preferred_selection.printer_model_id, preferred_selection.printer_variant);
-    if (preferred_printer != nullptr && preferred_printer->printer_technology() != ptSLA)
+    if (preferred_printer != nullptr &&
+        (preferred_printer->printer_technology() != ptSLA || preferred_printer->is_system))
         preferred_printer = nullptr;
-    if (initial_printer == nullptr || initial_printer->printer_technology() != ptSLA) {
-        initial_printer_profile_name = "- default DLP -";
+    if (initial_printer == nullptr || initial_printer->printer_technology() != ptSLA || initial_printer->is_system) {
+        initial_printer_profile_name = "Printer";
         config.set("presets", "printer", initial_printer_profile_name);
     }
     printers.select_preset_by_name(preferred_printer ? preferred_printer->name : initial_printer_profile_name, true, true);

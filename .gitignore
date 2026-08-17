@@ -5,6 +5,7 @@ Build.bat
 /.clangd/
 /compile_commands.json
 /output/
+build-default/
 MYMETA.json
 MYMETA.yml
 _build

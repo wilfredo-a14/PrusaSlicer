@@ -58,8 +58,17 @@ void TabSLAPrint::build_dlp_options_pages()
     optgroup->append_single_option_line("corkscrew_enable");
     optgroup->append_single_option_line("corkscrew_box_count");
 
-    dlp::debug_log("GUI: built native DLP print settings pages");
-    BOOST_LOG_TRIVIAL(debug) << "DLP GUI: native print settings pages built";
+    page = add_options_page(L("Multi-box Export"), "output+page_white");
+    optgroup = page->new_optgroup(L("Projection boxes"));
+    for (const char *key : { "multibox_num_boxes", "multibox_angle_between_boxes",
+                             "multibox_starting_angle", "multibox_box_width_px",
+                             "multibox_box_height_px", "multibox_pixel_scale_um",
+                             "multibox_fab_width_mm", "multibox_fab_height_mm",
+                             "multibox_radius_mm" })
+        optgroup->append_single_option_line(key);
+
+    dlp::debug_log("GUI: built native print settings pages");
+    BOOST_LOG_TRIVIAL(debug) << "Print GUI: native print settings pages built";
 }
 
 }} // namespace Slic3r::GUI

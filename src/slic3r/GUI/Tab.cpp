@@ -33,13 +33,14 @@
 #include "libslic3r/DLPDebugLog.hpp"
 
 #include "slic3r/Utils/Http.hpp"
-#include "slic3r/Utils/PrintHost.hpp"
 #include "BonjourDialog.hpp"
 #include "WipeTowerDialog.hpp"
 #include "ButtonsDescription.hpp"
 #include "Search.hpp"
 #include "OG_CustomCtrl.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <tuple>
 #include <wx/app.h>
 #include <wx/button.h>
@@ -1110,7 +1111,7 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
             opt_key == "corkscrew_enable"
                 ? (m_config->opt_bool("corkscrew_enable") ? "true" : "false")
                 : std::to_string(m_config->opt_int("corkscrew_box_count"))));
-        BOOST_LOG_TRIVIAL(debug) << "DLP GUI: " << opt_key << " changed";
+        BOOST_LOG_TRIVIAL(debug) << "Print GUI: " << opt_key << " changed";
     }
 
     if (opt_key == "brim_width")
@@ -1367,11 +1368,11 @@ void Tab::update_preset_description_line()
                 //FIXME add prefered_sla_material_profile for SLA
                 const std::string &default_sla_material_profile = preset.config.opt_string("default_sla_material_profile");
                 if (!default_sla_material_profile.empty())
-                    description_line += "\n\n\t" + _(L("default SLA material profile")) + ": \n\t\t" + default_sla_material_profile;
+                    description_line += "\n\n\t" + _(L("default material profile")) + ": \n\t\t" + default_sla_material_profile;
 
                 const std::string &default_sla_print_profile = preset.config.opt_string("default_sla_print_profile");
                 if (!default_sla_print_profile.empty())
-                    description_line += "\n\n\t" + _(L("default SLA print profile")) + ": \n\t\t" + default_sla_print_profile;
+                    description_line += "\n\n\t" + _(L("default print profile")) + ": \n\t\t" + default_sla_print_profile;
                 break;
             }
             default: break;
@@ -2517,40 +2518,9 @@ bool Tab::current_preset_is_dirty() const { return m_presets->current_is_dirty()
 void TabPrinter::build()
 {
     m_presets = &m_preset_bundle->printers;
-    m_printer_technology = m_presets->get_selected_preset().printer_technology();
-
-    // For DiffPresetDialog we use options list which is saved in Searcher class.
-    // Options for the Searcher is added in the moment of pages creation.
-    // So, build first of all printer pages for non-selected printer technology...
-    const char *other_technology_preset =
-        m_printer_technology == ptSLA ? "- default FFF -" : "- default DLP -";
-    Preset *other_preset = m_presets->find_preset(other_technology_preset);
-    if (!other_preset)
-        throw Slic3r::RuntimeError(format("Missing printer preset \"%1%\"", other_technology_preset));
-    m_config = &other_preset->config;
-    m_printer_technology == ptSLA ? build_fff() : build_sla();
-    if (m_printer_technology == ptSLA)
-        m_extruders_count_old = 0;// revert this value 
-
-    // ... and than for selected printer technology
+    m_printer_technology = ptSLA;
     load_initial_data();
-    m_printer_technology == ptSLA ? build_sla() : build_fff();
-}
-
-void TabPrinter::build_print_host_upload_group(Page* page)
-{
-    ConfigOptionsGroupShp optgroup = page->new_optgroup(L("Print Host upload"));
-
-    wxString description_line_text = _L("Print host upload settings are not exposed in this build.");
-
-    Line line = { "", "" };
-    line.full_width = 1;
-    line.widget = [this, description_line_text](wxWindow* parent) {
-        return description_line_widget(parent, m_presets->get_selected_preset().printer_technology() == ptFFF ?
-                                       &m_fff_print_host_upload_description_line : &m_sla_print_host_upload_description_line,
-                                       description_line_text);
-    };
-    optgroup->append_line(line);
+    build_sla();
 }
 
 static wxString get_info_klipper_string()
@@ -2663,8 +2633,6 @@ void TabPrinter::build_fff()
                 }
             });
         };
-
-        build_print_host_upload_group(page.get());
 
         optgroup = page->new_optgroup(L("Firmware"));
         optgroup->append_single_option_line("gcode_flavor");
@@ -2900,15 +2868,9 @@ void TabPrinter::build_sla()
     auto page = add_options_page(L("General"), "printer");
     auto optgroup = page->new_optgroup(L("Size and coordinates"));
 
-    create_line_with_widget(optgroup.get(), "bed_shape", "custom-svg-and-png-bed-textures_124612", [this](wxWindow* parent) {
-        return 	create_bed_shape_widget(parent);
-    });
     optgroup->append_single_option_line("max_print_height");
 
     optgroup = page->new_optgroup(L("Display"));
-    optgroup->append_single_option_line("display_width");
-    optgroup->append_single_option_line("display_height");
-
     auto option = optgroup->get_option("display_pixels_x");
     Line line = { option.opt.full_label, "" };
     line.append_option(option);
@@ -2920,10 +2882,10 @@ void TabPrinter::build_sla()
     optgroup->append_single_option_line("display_mirror_x");
     optgroup->append_single_option_line("display_mirror_y");
 
-    optgroup = page->new_optgroup(L("DLP projector"));
+    optgroup = page->new_optgroup(L("Projector"));
     for (const char *key : { "dlp_printer_type", "dlp_projection_mode", "dlp_display_cable",
                              "dlp_bit_depth", "dlp_max_image_upload", "dlp_vp_resync_rate",
-                             "dlp_dual_asic", "dlp_usb_vid", "dlp_usb_pid" })
+                             "dlp_dual_asic" })
         optgroup->append_single_option_line(key);
 
     optgroup = page->new_optgroup(L("Tilt"));
@@ -2958,12 +2920,10 @@ void TabPrinter::build_sla()
     optgroup->append_single_option_line("sla_archive_format");
     optgroup->append_single_option_line("sla_output_precision");
 
-    build_print_host_upload_group(page.get());
-
-    page = add_options_page(L("Machine Hardware"), "cog");
+    page = add_options_page(L("Manual Control"), "wrench");
     optgroup = page->new_optgroup(L("Devices"));
     for (const char *key : { "dlp_stage_hardware", "dlp_pump_hardware", "dlp_light_engine",
-                             "dlp_roll_to_roll" })
+                             "dlp_roll_to_roll", "dlp_focus_calibration_mode" })
         optgroup->append_single_option_line(key);
 
     optgroup = page->new_optgroup(L("Serial connections"));
@@ -2975,7 +2935,7 @@ void TabPrinter::build_sla()
         wxGetApp().SetWindowVariantForButton(detect_ports_btn);
         wxGetApp().UpdateDarkUI(detect_ports_btn);
         detect_ports_btn->SetFont(wxGetApp().normal_font());
-        detect_ports_btn->SetToolTip(_L("Scan every available serial/COM port and attached USB device without opening ports, sending commands, or selecting a default."));
+        detect_ports_btn->SetToolTip(_L("Detect connected devices and automatically fill their ports, baud rates, and controller addresses."));
 
         auto *scan_status = new wxStaticText(parent, wxID_ANY, _L("Waiting to scan."));
         scan_status->SetFont(wxGetApp().normal_font());
@@ -2992,90 +2952,166 @@ void TabPrinter::build_sla()
 
             const std::vector<Utils::SerialPortInfo> ports = Utils::scan_serial_ports_extended();
             const std::vector<Utils::USBDeviceInfo> usb_devices = Utils::scan_usb_devices();
-            BOOST_LOG_TRIVIAL(info) << "DLP serial port detector found " << ports.size() << " device(s)";
-            dlp::debug_log("GUI: serial port detector found " + std::to_string(ports.size()) + " device(s)");
+            BOOST_LOG_TRIVIAL(info) << "Connection detector found " << ports.size()
+                                    << " serial device(s) and " << usb_devices.size() << " USB device(s)";
+            dlp::debug_log("GUI: connection detector found " + std::to_string(ports.size()) +
+                           " serial device(s) and " + std::to_string(usb_devices.size()) + " USB device(s)");
 
             detect_ports_btn->Enable();
-            scan_status->SetLabel(wxString::Format(_L("Scan complete: %d serial/COM port(s), %d USB device(s)."),
-                                                  int(ports.size()), int(usb_devices.size())));
-            parent->Layout();
 
-            const std::string stage_port = m_config->opt_string("dlp_stage_serial_port");
-            const std::string pump_port  = m_config->opt_string("dlp_pump_serial_port");
-            const std::string pic_port   = m_config->opt_string("dlp_pic_serial_port");
-
-            auto port_is_connected = [&ports](const std::string &configured_port) {
-                return std::any_of(ports.begin(), ports.end(), [&configured_port](const Utils::SerialPortInfo &port) {
-                    return port.port == configured_port;
-                });
-            };
-            wxString message = _L("Hardware scan complete.\n\nConfigured serial-port assignments:");
-            auto append_status = [&message, &port_is_connected](const wxString &device, const std::string &configured_port) {
-                message += "\n" + device + ": ";
-                if (configured_port.empty()) {
-                    message += _L("Waiting for selection");
-                } else {
-                    message += from_u8(configured_port);
-                    message += port_is_connected(configured_port) ? _L(" (present)") : _L(" (not found in this scan)");
-                }
-            };
-            append_status(_L("Stage"), stage_port);
-            append_status(_L("Pump"), pump_port);
-            append_status(_L("PIC"), pic_port);
-
-            if (ports.empty() && usb_devices.empty()) {
-                message += "\n\n" + _L("No serial/COM ports or USB devices were found. Check the connection and device drivers, then scan again.");
-                InfoDialog(this, _L("Hardware scan"), message).ShowModal();
+            if (ports.empty()) {
+                scan_status->SetLabel(_L("No serial/COM devices found."));
+                parent->Layout();
+                InfoDialog(this, _L("Connection scan"),
+                    _L("No serial/COM devices were found. Check the connections and device drivers, then scan again.")).ShowModal();
                 return;
             }
 
-            message += wxString::Format(_L("\n\nDetected serial/COM ports (%d):\n"), int(ports.size()));
-            if (ports.empty())
-                message += _L("None. Attached USB hardware may not provide a serial/COM port.\n");
+            auto normalized = [](std::string text) {
+                std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+                    return static_cast<char>(std::tolower(ch));
+                });
+                return text;
+            };
+            auto contains_any = [](const std::string &text, std::initializer_list<const char*> markers) {
+                return std::any_of(markers.begin(), markers.end(), [&text](const char *marker) {
+                    return text.find(marker) != std::string::npos;
+                });
+            };
+
+            std::vector<std::string> descriptions;
+            descriptions.reserve(ports.size());
+            for (const Utils::SerialPortInfo &port : ports)
+                descriptions.emplace_back(normalized(port.friendly_name + " " + port.port));
+
+            std::vector<bool> claimed(ports.size(), false);
+            auto claim_named = [&descriptions, &claimed, &contains_any](std::initializer_list<const char*> markers) {
+                for (size_t i = 0; i < descriptions.size(); ++i) {
+                    if (!claimed[i] && contains_any(descriptions[i], markers)) {
+                        claimed[i] = true;
+                        return int(i);
+                    }
+                }
+                return -1;
+            };
+            auto claim_existing = [&ports, &claimed](const std::string &configured_port) {
+                if (configured_port.empty())
+                    return -1;
+                for (size_t i = 0; i < ports.size(); ++i) {
+                    if (!claimed[i] && ports[i].port == configured_port) {
+                        claimed[i] = true;
+                        return int(i);
+                    }
+                }
+                return -1;
+            };
+            auto claim_next = [&claimed]() {
+                for (size_t i = 0; i < claimed.size(); ++i) {
+                    if (!claimed[i]) {
+                        claimed[i] = true;
+                        return int(i);
+                    }
+                }
+                return -1;
+            };
+
+            int pic_idx = -1;
             for (size_t i = 0; i < ports.size(); ++i) {
-                const Utils::SerialPortInfo &port = ports[i];
-                message += wxString::Format("\n%d. ", int(i + 1));
-                message += _L("Port") + ": " + from_u8(port.port);
-                message += "\n   " + _L("Device") + ": ";
-                if (port.friendly_name.empty())
-                    message += _L("Unknown serial device");
-                else
-                    message += from_u8(port.friendly_name);
+                if (ports[i].id_vendor == 0x0451 && ports[i].id_product == 0xC900) {
+                    claimed[i] = true;
+                    pic_idx = int(i);
+                    break;
+                }
+            }
+            int stage_idx = claim_named({ "newport", "smc100", "gts70", "thorlabs", "kvs30", "stage", "motion", "grbl", "lead screw", "arduino" });
+            int pump_idx  = claim_named({ "harvard", "syringe", "infusion pump", "pump" });
+            if (pic_idx < 0)
+                pic_idx = claim_named({ "microchip", "mcp2200", "pic controller", "lightcrafter", "teensy" });
 
-                if (port.id_vendor != static_cast<unsigned>(-1) && port.id_product != static_cast<unsigned>(-1))
-                    message += wxString::Format("\n   USB VID:PID: %04X:%04X", port.id_vendor, port.id_product);
+            if (stage_idx < 0)
+                stage_idx = claim_existing(m_config->opt_string("dlp_stage_serial_port"));
+            if (pump_idx < 0)
+                pump_idx = claim_existing(m_config->opt_string("dlp_pump_serial_port"));
+            if (pic_idx < 0)
+                pic_idx = claim_existing(m_config->opt_string("dlp_pic_serial_port"));
 
-                wxString assignments;
-                if (port.port == stage_port)
-                    assignments += _L("Stage");
-                if (port.port == pump_port)
-                    assignments += (assignments.empty() ? "" : ", ") + _L("Pump");
-                if (port.port == pic_port)
-                    assignments += (assignments.empty() ? "" : ", ") + _L("PIC");
-                if (!assignments.empty())
-                    message += "\n   " + _L("Assigned to") + ": " + assignments;
+            const bool pump_expected = pump_idx >= 0 ||
+                m_config->opt_string("dlp_pump_hardware") != "None" || ports.size() >= 3;
+            if (stage_idx < 0)
+                stage_idx = claim_next();
+            if (pump_idx < 0 && pump_expected)
+                pump_idx = claim_next();
+            if (pic_idx < 0)
+                pic_idx = claim_next();
 
-                message += "\n\n";
+            DynamicPrintConfig detected = *m_config;
+            auto set_string = [&detected](const char *key, const std::string &value) {
+                detected.set_key_value(key, new ConfigOptionString(value));
+            };
+            auto set_int = [&detected](const char *key, int value) {
+                detected.set_key_value(key, new ConfigOptionInt(value));
+            };
+            auto assigned_port = [&ports](int idx) {
+                return idx >= 0 ? ports[size_t(idx)].port : std::string();
+            };
+
+            set_string("dlp_stage_serial_port", assigned_port(stage_idx));
+            set_string("dlp_pump_serial_port",  assigned_port(pump_idx));
+            set_string("dlp_pic_serial_port",   assigned_port(pic_idx));
+
+            if (stage_idx >= 0) {
+                const std::string &stage = descriptions[size_t(stage_idx)];
+                if (contains_any(stage, { "thorlabs", "kvs30" }))
+                    set_string("dlp_stage_hardware", "Thorlabs KVS30/M");
+                else if (contains_any(stage, { "grbl", "g-code", "gcode", "lead screw", "ch340", "arduino" }))
+                    set_string("dlp_stage_hardware", "G-code lead screw");
+                else if (contains_any(stage, { "newport", "smc100", "gts70" }))
+                    set_string("dlp_stage_hardware", "Newport GTS70V (SMC100CC)");
+            }
+            if (pump_idx >= 0 && (detected.opt_string("dlp_pump_hardware") == "None" ||
+                                  contains_any(descriptions[size_t(pump_idx)], { "harvard", "syringe", "pump" })))
+                set_string("dlp_pump_hardware", "Harvard Apparatus");
+
+            const std::string stage_hardware = detected.opt_string("dlp_stage_hardware");
+            if (stage_hardware == "Newport GTS70V (SMC100CC)") {
+                set_int("dlp_smc_baud", 57600);
+                set_string("dlp_smc_address", "1");
+                set_string("dlp_manual_stage_type", "SMC100CC");
+            } else if (stage_hardware == "Thorlabs KVS30/M") {
+                set_int("dlp_stage_baud", 115200);
+            } else if (stage_hardware == "G-code lead screw") {
+                set_int("dlp_stage_baud", 115200);
+                set_string("dlp_manual_stage_type", "G-code");
+            }
+            if (pump_idx >= 0 && detected.opt_string("dlp_pump_hardware") == "Harvard Apparatus") {
+                set_int("dlp_pump_baud", 9600);
+                set_string("dlp_pump_address", "0");
             }
 
-            message += wxString::Format(_L("Detected USB devices (%d):\n"), int(usb_devices.size()));
-            if (usb_devices.empty())
-                message += _L("None.\n");
-            for (size_t i = 0; i < usb_devices.size(); ++i) {
-                const Utils::USBDeviceInfo &usb = usb_devices[i];
-                message += wxString::Format("\n%d. ", int(i + 1));
-                message += usb.friendly_name.empty() ? _L("Unknown USB device") : from_u8(usb.friendly_name);
-                if (!usb.manufacturer.empty())
-                    message += "\n   " + _L("Manufacturer") + ": " + from_u8(usb.manufacturer);
-                if (usb.id_vendor != static_cast<unsigned>(-1) && usb.id_product != static_cast<unsigned>(-1))
-                    message += wxString::Format("\n   USB VID:PID: %04X:%04X", usb.id_vendor, usb.id_product);
-                if (!usb.serial_number.empty())
-                    message += "\n   " + _L("Serial number") + ": " + from_u8(usb.serial_number);
-                message += "\n";
+            if (pic_idx >= 0) {
+                const Utils::SerialPortInfo &pic = ports[size_t(pic_idx)];
+                if (pic.id_vendor != static_cast<unsigned>(-1) && pic.id_product != static_cast<unsigned>(-1)) {
+                    set_string("dlp_usb_vid", Slic3r::format("0x%|04X|", pic.id_vendor));
+                    set_string("dlp_usb_pid", Slic3r::format("0x%|04X|", pic.id_product));
+                }
             }
 
-            message += "\n" + _L("A USB device is listed even when it has no serial/COM port. Only paths in the serial/COM section can be assigned to Stage, Pump, or PIC. The scan does not select a default.");
-            InfoDialog(this, _L("Hardware scan"), message).ShowModal();
+            load_config(detected);
+
+            const int assigned_count = (stage_idx >= 0 ? 1 : 0) + (pump_idx >= 0 ? 1 : 0) + (pic_idx >= 0 ? 1 : 0);
+            scan_status->SetLabel(wxString::Format(_L("Assigned %d device connection(s)."), assigned_count));
+            parent->Layout();
+
+            wxString message = _L("Connection settings were filled automatically:");
+            auto append_assignment = [&message, &ports](const wxString &device, int idx) {
+                message += "\n" + device + ": ";
+                message += idx >= 0 ? from_u8(ports[size_t(idx)].port) : _L("Not found");
+            };
+            append_assignment(_L("Stage"), stage_idx);
+            append_assignment(_L("Pump"), pump_idx);
+            append_assignment(_L("Controller"), pic_idx);
+            message += "\n\n" + _L("Baud rates and controller addresses were set from the detected device types. Unidentified serial adapters were assigned in port order.");
+            InfoDialog(this, _L("Connection scan"), message).ShowModal();
         });
 
         return sizer;
@@ -3092,7 +3128,6 @@ void TabPrinter::build_sla()
                              "dlp_kvs_acceleration_scale" })
         optgroup->append_single_option_line(key);
 
-    page = add_options_page(L("Manual Control"), "wrench");
     optgroup = page->new_optgroup(L("Stage"));
     for (const char *key : { "dlp_manual_stage_type", "dlp_manual_relative_move",
                              "dlp_manual_absolute_move", "dlp_manual_set_position",
@@ -3109,8 +3144,8 @@ void TabPrinter::build_sla()
         optgroup->append_single_option_line(key);
 
     optgroup = page->new_optgroup(L("Focus and camera"));
-    for (const char *key : { "dlp_focus_calibration_mode", "dlp_focus_starting_step",
-                             "dlp_focus_minimum_step", "dlp_camera_exposure", "dlp_camera_gain" })
+    for (const char *key : { "dlp_focus_starting_step", "dlp_focus_minimum_step",
+                             "dlp_camera_exposure", "dlp_camera_gain" })
         optgroup->append_single_option_line(key);
 
     const int notes_field_height = 25; // 250
@@ -3642,6 +3677,9 @@ void TabPrinter::activate_selected_page(std::function<void()> throw_if_canceled)
 {
     Tab::activate_selected_page(throw_if_canceled);
 
+    if (m_printer_technology == ptSLA)
+        update_sla();
+
     // "extruders_count" doesn't update from the update_config(),
     // so update it implicitly
     if (m_active_page && m_active_page->title() == "General")
@@ -3653,8 +3691,6 @@ void TabPrinter::clear_pages()
     Tab::clear_pages();
 
     m_machine_limits_description_line           = nullptr;
-    m_fff_print_host_upload_description_line    = nullptr;
-    m_sla_print_host_upload_description_line    = nullptr;
 }
 
 void TabPrinter::toggle_options()
@@ -3800,6 +3836,24 @@ void TabPrinter::update_fff()
 
 void TabPrinter::update_sla()
 {
+    const auto page_it = std::find_if(m_pages.begin(), m_pages.end(), [](const PageShp &page) {
+        return page->title() == L("Manual Control");
+    });
+    if (page_it == m_pages.end())
+        return;
+
+    const PageShp &page = *page_it;
+    const auto show_group = [&page](const wxString &title, bool show) {
+        if (const ConfigOptionsGroupShp group = page->get_optgroup(title))
+            group->Show(show);
+    };
+
+    show_group(L("Pump"), m_config->opt_string("dlp_pump_hardware") != "None");
+    show_group(L("KVS scaling"), m_config->opt_string("dlp_stage_hardware") == "Thorlabs KVS30/M");
+    show_group(L("Focus and camera"), m_config->opt_string("dlp_focus_calibration_mode") != "Unselected");
+
+    if (page->vsizer())
+        page->vsizer()->Layout();
 }
 
 void Tab::update_ui_items_related_on_parent_preset(const Preset* selected_preset_parent)
@@ -5430,7 +5484,7 @@ void TabSLAMaterial::build()
     optgroup->append_single_option_line("exposure_time");
     optgroup->append_single_option_line("initial_exposure_time");
 
-    optgroup = page->new_optgroup(L("DLP light timing"));
+    optgroup = page->new_optgroup(L("Light timing"));
     for (const char *key : { "dlp_initial_exposure_delay", "dlp_initial_exposure_intensity",
                              "dlp_uv_intensity", "dlp_dark_time", "dlp_post_exposure_delay" })
         optgroup->append_single_option_line(key);
@@ -5952,7 +6006,6 @@ void TabSLAPrint::build()
     auto page = add_options_page(L("Layers and perimeters"), "layers");
 
     auto optgroup = page->new_optgroup(L("Layers"));
-    optgroup->append_single_option_line("layer_height");
     optgroup->append_single_option_line("faded_layers");
 
     build_dlp_options_pages();

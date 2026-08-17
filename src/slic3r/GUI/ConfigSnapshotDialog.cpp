@@ -69,8 +69,8 @@ static wxString generate_html_row(const Config::Snapshot &snapshot, bool row_eve
         text += _(L("filaments")) + ": " + snapshot.filaments.front() + "<br>";
     }
     if (has_sla) {
-        text += _(L("SLA print")) + ": " + snapshot.sla_print + "<br>";
-        text += _(L("SLA material")) + ": " + snapshot.sla_material + "<br>";
+        text += _(L("Print")) + ": " + snapshot.sla_print + "<br>";
+        text += _(L("Material")) + ": " + snapshot.sla_material + "<br>";
     }
     text += _(L("printer")) + ": " + (snapshot.physical_printer.empty() ? snapshot.printer : snapshot.physical_printer) + "<br>";
 

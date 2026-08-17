@@ -1204,7 +1204,7 @@ void GLCanvas3D::SLAView::render_switch_button()
     ImGui::SetNextWindowPos(ImVec2((float)ss_box.max.x(), (float)ss_box.center().y()), ImGuiCond_Always, ImVec2(0.0, 0.5));
     ImGuiPureWrap::begin(std::string("SLAViewSwitch"), ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration);
     const float icon_size = 1.5 * ImGui::GetTextLineHeight();
-    if (ImGuiPureWrap::draw_radio_button(_u8L("SLA view"), 1.5f * icon_size, true,
+    if (ImGuiPureWrap::draw_radio_button(_u8L("Print view"), 1.5f * icon_size, true,
         [sel_instance](ImGuiWindow& window, const ImVec2& pos, float size) {
             const wchar_t icon_id = (sel_instance->second == ESLAViewType::Original) ? ImGui::SlaViewProcessed : ImGui::SlaViewOriginal;
             wxGetApp().imgui()->draw_icon(window, pos, size, icon_id);
@@ -5791,9 +5791,9 @@ void GLCanvas3D::_picking_pass()
         if (m_volumes.volumes[hit.raycaster_id]->is_wipe_tower)
             object_type = "Volume (Wipe tower)";
         else if (m_volumes.volumes[hit.raycaster_id]->volume_idx() == -int(slaposPad))
-            object_type = "Volume (SLA pad)";
+            object_type = "Volume (Pad)";
         else if (m_volumes.volumes[hit.raycaster_id]->volume_idx() == -int(slaposSupportTree))
-            object_type = "Volume (SLA supports)";
+            object_type = "Volume (Supports)";
         else if (m_volumes.volumes[hit.raycaster_id]->is_modifier)
             object_type = "Volume (Modifier)";
         else
@@ -7395,7 +7395,7 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
     switch (warning) {
     case EWarning::ObjectOutside:      text = _u8L("An object outside the print area was detected."); break;
     case EWarning::ToolpathOutside:    text = _u8L("A toolpath outside the print area was detected."); error = ErrorType::SLICING_ERROR; break;
-    case EWarning::SlaSupportsOutside: text = _u8L("SLA supports outside the print area were detected."); error = ErrorType::PLATER_ERROR; break;
+    case EWarning::SlaSupportsOutside: text = _u8L("Supports outside the print area were detected."); error = ErrorType::PLATER_ERROR; break;
     case EWarning::SomethingNotShown:  text = _u8L("Some objects are not visible during editing."); break;
     case EWarning::ObjectClashed:
         text = _u8L("An object outside the print area was detected.\n"

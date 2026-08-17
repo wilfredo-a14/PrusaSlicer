@@ -176,6 +176,15 @@ foreach (DIR ${PREFIX_PATH_CHECK})
     endif ()
 endforeach ()
 
+if (SLIC3R_STATIC)
+    foreach (DIR ${PREFIX_PATH_CHECK})
+        if (EXISTS "${DIR}/lib/cmake/ZLIB/ZLIBConfig.cmake")
+            set(ZLIB_DIR "${DIR}/lib/cmake/ZLIB" CACHE PATH "Path to bundled ZLIB config" FORCE)
+            break()
+        endif ()
+    endforeach ()
+endif ()
+
 # Add our own cmake module path.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules/)
 
@@ -378,6 +387,9 @@ find_package(Eigen3 3.3.7 REQUIRED)
 
 add_library(boost_libs INTERFACE)
 add_library(boost_headeronly INTERFACE)
+
+target_include_directories(boost_headeronly INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/boost)
+target_compile_definitions(boost_headeronly INTERFACE BOOST_USER_CONFIG=\"slic3r_boost_user_config.hpp\")
 
 if (APPLE)
     # BOOST_ASIO_DISABLE_KQUEUE : prevents a Boost ASIO bug on OS X: https://svn.boost.org/trac/boost/ticket/5339

@@ -617,15 +617,12 @@ void MainFrame::update_topbars()
     if (wxGetApp().is_gcode_viewer())
         return;
 
-    const bool show_login = !wxGetApp().app_config->has("show_login_button") || wxGetApp().app_config->get_bool("show_login_button");
-    m_tmp_top_bar->ShowUserAccount(show_login);
-    m_tabpanel->ShowUserAccount(show_login);
+    m_tmp_top_bar->ShowUserAccount(false);
+    m_tabpanel->ShowUserAccount(false);
 
-    if (!show_login) {
-        if (auto user_account = wxGetApp().plater()->get_user_account();
-            user_account && user_account->is_logged())
-            user_account->do_logout();
-    }
+    if (auto user_account = wxGetApp().plater()->get_user_account();
+        user_account && user_account->is_logged())
+        user_account->do_logout();
 }
 
 void MainFrame::set_callbacks_for_topbar_menus()
@@ -1053,6 +1050,15 @@ bool MainFrame::can_export_toolpaths() const
     return (m_plater != nullptr) && (m_plater->printer_technology() == ptFFF) && m_plater->is_preview_shown() && m_plater->is_preview_loaded() && m_plater->has_toolpaths_to_export();
 }
 
+bool MainFrame::can_export_multibox_pngs() const
+{
+    if (m_plater == nullptr || m_plater->printer_technology() != ptSLA)
+        return false;
+    if (m_plater->model().objects.empty())
+        return false;
+    return !m_plater->active_sla_print().print_layers().empty();
+}
+
 bool MainFrame::can_export_supports() const
 {
     if ((m_plater == nullptr) || (m_plater->printer_technology() != ptSLA) || m_plater->model().objects.empty())
@@ -1303,10 +1309,6 @@ static wxMenu* generate_help_menu()
     append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("&Quick Start"), SLIC3R_APP_NAME),
         wxString::Format(_L("Open the %s website in your browser"), SLIC3R_APP_NAME),
         [](wxCommandEvent&) { wxGetApp().open_browser_with_warning_dialog("https://help.prusa3d.com/article/first-print-with-prusaslicer_1753", nullptr, false); });
-    // TRN Item from "Help" menu
-    append_menu_item(helpMenu, wxID_ANY, wxString::Format(_L("Sample &G-codes and Models"), SLIC3R_APP_NAME),
-        wxString::Format(_L("Open the %s website in your browser"), SLIC3R_APP_NAME),
-        [](wxCommandEvent&) { wxGetApp().open_browser_with_warning_dialog("https://help.prusa3d.com/article/sample-g-codes_529630", nullptr, false); });
     helpMenu->AppendSeparator();
     append_menu_item(helpMenu, wxID_ANY, _L("Prusa 3D &Drivers"), _L("Open the Prusa3D drivers download page in your browser"),
         [](wxCommandEvent&) { wxGetApp().open_web_page_localized("https://www.prusa3d.com/downloads"); });
@@ -1444,7 +1446,7 @@ void MainFrame::init_menubar_as_editor()
             [this](wxCommandEvent&) { if (m_plater) m_plater->add_model(true); }, "import_plater", nullptr,
             [this](){return m_plater != nullptr; }, this);
         
-        append_menu_item(import_menu, wxID_ANY, _L("Import SLA Archive") + dots, _L("Load an SLA archive"),
+        append_menu_item(import_menu, wxID_ANY, _L("Import Print Archive") + dots, _L("Load a print archive"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->import_sl1_archive(); }, "import_plater", nullptr,
             [this](){return m_plater != nullptr && m_plater->get_ui_job_worker().is_idle(); }, this);
     
@@ -1466,17 +1468,14 @@ void MainFrame::init_menubar_as_editor()
         append_submenu(fileMenu, import_menu, wxID_ANY, _L("&Import"), "");
 
         wxMenu* export_menu = new wxMenu();
-        wxMenuItem* item_export_gcode = append_menu_item(export_menu, wxID_ANY, _L("Export &G-code") + dots + "\tCtrl+G", _L("Export current plate as G-code"),
+        wxMenuItem* item_export_gcode = append_menu_item(export_menu, wxID_ANY, _L("Export &Print") + dots + "\tCtrl+G", _L("Export the current plate"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->export_gcode(false); }, "export_gcode", nullptr,
             [this](){return can_export_gcode(); }, this);
         m_changeable_menu_items.push_back(item_export_gcode);
-        wxMenuItem* item_send_gcode = append_menu_item(export_menu, wxID_ANY, _L("S&end G-code") + dots + "\tCtrl+Shift+G", _L("Send to print current plate as G-code"),
+        wxMenuItem* item_send_gcode = append_menu_item(export_menu, wxID_ANY, _L("S&end Print") + dots + "\tCtrl+Shift+G", _L("Send the current plate to print"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->send_gcode(); }, "export_gcode", nullptr,
             [this](){return can_send_gcode(); }, this);
         m_changeable_menu_items.push_back(item_send_gcode);
-		append_menu_item(export_menu, wxID_ANY, _L("Export G-code to SD Card / Flash Drive") + dots + "\tCtrl+U", _L("Export current plate as G-code to SD card / Flash drive"),
-			[this](wxCommandEvent&) { if (m_plater) m_plater->export_gcode(true); }, "export_to_sd", nullptr,
-			[this]() {return can_export_gcode_sd(); }, this);
         export_menu->AppendSeparator();
         append_menu_item(export_menu, wxID_ANY, _L("Export Plate as &STL/OBJ") + dots, _L("Export current plate as STL/OBJ"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->export_stl_obj(); }, "export_plater", nullptr,
@@ -1484,10 +1483,9 @@ void MainFrame::init_menubar_as_editor()
         append_menu_item(export_menu, wxID_ANY, _L("Export Plate as STL/OBJ &Including Supports") + dots, _L("Export current plate as STL/OBJ including supports"),
             [this](wxCommandEvent&) { if (m_plater) m_plater->export_stl_obj(true); }, "export_plater", nullptr,
             [this](){return can_export_supports(); }, this);
-        export_menu->AppendSeparator();
-        append_menu_item(export_menu, wxID_ANY, _L("Export &Toolpaths as OBJ") + dots, _L("Export toolpaths as OBJ"),
-            [this](wxCommandEvent&) { if (m_plater) m_plater->export_toolpaths_to_obj(); }, "export_plater", nullptr,
-            [this]() {return can_export_toolpaths(); }, this);
+        append_menu_item(export_menu, wxID_ANY, _L("Export &Multi-box PNGs") + dots, _L("Export sliced layers as multi-box projection PNG files"),
+            [this](wxCommandEvent&) { if (m_plater) m_plater->export_multibox_pngs(); }, "export_plater", nullptr,
+            [this]() { return can_export_multibox_pngs(); }, this);
         export_menu->AppendSeparator();
         append_menu_item(export_menu, wxID_ANY, _L("Export &Config") + dots +"\tCtrl+E", _L("Export current configuration to file"),
             [this](wxCommandEvent&) { export_config(); }, "export_config", nullptr,
@@ -1496,19 +1494,6 @@ void MainFrame::init_menubar_as_editor()
             [this](wxCommandEvent&) { export_configbundle(); }, "export_config_bundle", nullptr,
             []() {return true; }, this);
         append_submenu(fileMenu, export_menu, wxID_ANY, _L("&Export"), "");
-
-        wxMenu* convert_menu = new wxMenu();
-        append_menu_item(convert_menu, wxID_ANY, _L("Convert ASCII G-code to &binary") + dots, _L("Convert a G-code file from ASCII to binary format"),
-            [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->convert_gcode_to_binary(); }, "convert_file", nullptr,
-            []() { return true; }, this);
-        append_menu_item(convert_menu, wxID_ANY, _L("Convert binary G-code to &ASCII") + dots, _L("Convert a G-code file from binary to ASCII format"),
-            [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->convert_gcode_to_ascii(); }, "convert_file", nullptr,
-            []() { return true; }, this);
-        append_submenu(fileMenu, convert_menu, wxID_ANY, _L("&Convert"), "");
-
-		append_menu_item(fileMenu, wxID_ANY, _L("Ejec&t SD Card / Flash Drive") + dots + "\tCtrl+T", _L("Eject SD card / Flash drive after the G-code was exported to it."),
-			[this](wxCommandEvent&) { if (m_plater) m_plater->eject_drive(); }, "eject_sd", nullptr,
-			[this]() {return can_eject(); }, this);
 
         fileMenu->AppendSeparator();
 
@@ -1519,9 +1504,6 @@ void MainFrame::init_menubar_as_editor()
         append_menu_item(fileMenu, wxID_ANY, _L("&Repair STL file") + dots, _L("Automatically repair an STL file"),
             [this](wxCommandEvent&) { repair_stl(); }, "wrench", nullptr,
             []() { return true; }, this);
-        fileMenu->AppendSeparator();
-        append_menu_item(fileMenu, wxID_ANY, _L("&G-code Preview") + dots, _L("Open G-code viewer"),
-            [this](wxCommandEvent&) { start_new_gcodeviewer_open_file(this); }, "", nullptr);
         fileMenu->AppendSeparator();
         #ifdef _WIN32
             append_menu_item(fileMenu, wxID_EXIT, _L("E&xit"), wxString::Format(_L("Exit %s"), SLIC3R_APP_NAME),
@@ -1606,7 +1588,7 @@ void MainFrame::init_menubar_as_editor()
         append_menu_item(windowMenu, wxID_HIGHEST + 2, _L("P&rint Settings Tab") + "\tCtrl+2", _L("Show the print settings"),
             [this/*, tab_offset*/](wxCommandEvent&) { select_tab(1); }, "cog", nullptr,
             []() {return true; }, this);
-        wxMenuItem* item_material_tab = append_menu_item(windowMenu, wxID_HIGHEST + 3, _L("Settings Tab") + "\tCtrl+3", _L("Show the settings"),
+        wxMenuItem* item_material_tab = append_menu_item(windowMenu, wxID_HIGHEST + 3, _L("Material Settings Tab") + "\tCtrl+3", _L("Show the material settings"),
             [this/*, tab_offset*/](wxCommandEvent&) { select_tab(2); }, "spool", nullptr,
             []() {return true; }, this);
         m_changeable_menu_items.push_back(item_material_tab);
@@ -1776,6 +1758,9 @@ void MainFrame::init_menubar_as_gcodeviewer()
         append_menu_item(fileMenu, wxID_ANY, _L("Export &Toolpaths as OBJ") + dots, _L("Export toolpaths as OBJ"),
             [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->export_toolpaths_to_obj(); }, "export_plater", nullptr,
             [this]() {return can_export_toolpaths(); }, this);
+        append_menu_item(fileMenu, wxID_ANY, _L("Export &Multi-box PNGs") + dots, _L("Export sliced layers as multi-box projection PNG files"),
+            [this](wxCommandEvent&) { if (m_plater != nullptr) m_plater->export_multibox_pngs(); }, "export_plater", nullptr,
+            [this]() { return can_export_multibox_pngs(); }, this);
         append_menu_item(fileMenu, wxID_ANY, _L("Open &PrusaSlicer") + dots, _L("Open PrusaSlicer"),
             [](wxCommandEvent&) { start_new_slicer(); }, "", nullptr,
             []() { return true; }, this);
@@ -1816,23 +1801,19 @@ void MainFrame::update_menubar()
     if (wxGetApp().is_gcode_viewer())
         return;
 
-    const bool is_fff = plater()->printer_technology() == ptFFF;
-
-    m_changeable_menu_items[miExport]       ->SetItemLabel((is_fff ? _L("Export &G-code")         : _L("E&xport"))        + dots    + "\tCtrl+G");
-    m_changeable_menu_items[miSend]         ->SetItemLabel((is_fff ? _L("S&end G-code")           : _L("S&end to print")) + dots    + "\tCtrl+Shift+G");
-
-    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel((is_fff ? _L("Print&er Settings Tab") : _L("Mate&rial Settings Tab")) + "\tCtrl+3");
-    m_changeable_menu_items[miMaterialTab]  ->SetBitmap(*get_bmp_bundle(is_fff ? "printer" : "resin"));
-
-    m_changeable_menu_items[miPrinterTab]   ->Enable(!is_fff);
-    m_changeable_menu_items[miPrinterTab]   ->SetBitmap(*get_bmp_bundle(is_fff ? "printer" : "sla_printer"));
+    m_changeable_menu_items[miExport]       ->SetItemLabel(_L("Export &Print") + dots + "\tCtrl+G");
+    m_changeable_menu_items[miSend]         ->SetItemLabel(_L("S&end Print") + dots + "\tCtrl+Shift+G");
+    m_changeable_menu_items[miMaterialTab]  ->SetItemLabel(_L("Material Settings Tab") + "\tCtrl+3");
+    m_changeable_menu_items[miMaterialTab]  ->SetBitmap(*get_bmp_bundle("resin"));
+    m_changeable_menu_items[miPrinterTab]   ->Enable(true);
+    m_changeable_menu_items[miPrinterTab]   ->SetBitmap(*get_bmp_bundle("sla_printer"));
 }
 
 
 void MainFrame::reslice_now()
 {
     if (m_plater)
-        m_plater->reslice();
+        m_plater->reslice(true);
 }
 
 void MainFrame::repair_stl()

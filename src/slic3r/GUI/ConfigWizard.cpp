@@ -984,7 +984,7 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
     wxString text;
     if (materials->technology == T_FFF && template_shown) {
         // TRN ConfigWizard: Materials : "%1%" = "Filaments"/"SLA materials"
-        text = format_wxstr(_L("%1% visible for <b>(\"Template\")</b> printer are universal profiles available for all printers. These might not be compatible with your printer."), materials->technology == T_FFF ? _L("Filaments") : _L("SLA materials"));
+        text = format_wxstr(_L("%1% visible for <b>(\"Template\")</b> printer are universal profiles available for all printers. These might not be compatible with your printer."), _L("Materials"));
     } else {
         bool has_medical = false;
         for (const Preset *printer : materials->printers) {
@@ -998,10 +998,10 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
             zero_line.Clear();
         }
         // TRN ConfigWizard: Materials : "%1%" = "Filaments"/"SLA materials"
-        wxString first_line = format_wxstr(_L("%1% marked with <b>*</b> are <b>not</b> compatible with some installed printers."), materials->technology == T_FFF ? _L("Filaments") : _L("SLA materials"));
+        wxString first_line = format_wxstr(_L("%1% marked with <b>*</b> are <b>not</b> compatible with some installed printers."), _L("Materials"));
         if (all_printers) {
             // TRN ConfigWizard: Materials : "%1%" = "filament"/"SLA material"
-            wxString second_line = format_wxstr(_L("All installed printers are compatible with the selected %1%."), materials->technology == T_FFF ? _L("filament") : _L("SLA material"));
+            wxString second_line = format_wxstr(_L("All installed printers are compatible with the selected %1%."), _L("material"));
             text = wxString::Format(
                 "<html>"
                 "<style>"
@@ -1024,9 +1024,7 @@ void PageMaterials::set_compatible_printers_html_window(const std::vector<std::s
         else {
             wxString second_line;
             if (!printer_names.empty())
-                second_line = (materials->technology == T_FFF ?
-                    _L("Only the following installed printers are compatible with the selected filaments") :
-                    _L("Only the following installed printers are compatible with the selected SLA materials")) + ":";
+                second_line = _L("Only the following installed printers are compatible with the selected materials") + ":";
             text = wxString::Format(
                 "<html>"
                 "<style>"
@@ -2774,8 +2772,7 @@ void ConfigWizard::priv::set_start_page(ConfigWizard::StartPage start_page)
     switch (start_page) {
         case ConfigWizard::SP_PRINTERS: {
                 // find start 
-                PagePrinters* page = !pages_fff.empty()  ? pages_fff[0]  : 
-                                     !pages_msla.empty() ? pages_msla[0] : nullptr;
+                PagePrinters* page = !pages_msla.empty() ? pages_msla[0] : nullptr;
                 for (const auto& repo : repositories) {
                     if (page)
                         break;
@@ -2837,12 +2834,11 @@ void ConfigWizard::priv::create_vendor_printers_page(const std::string& repo_id,
     PagePrinters* pageFFF = nullptr;
     PagePrinters* pageSLA = nullptr;
 
-    const bool is_prusa_vendor = vendor->name.find("Prusa") != std::string::npos;
     const unsigned indent = from_single_vendor_repo ? 0 : 1;
 
     if (is_sla_technology) 
     {
-        pageSLA = new PagePrinters(q, vendor->name + " " + _L("SLA Technology Printers"), vendor->name + (is_prusa_vendor ? "" : " MLSA"), *vendor, indent, T_SLA);
+        pageSLA = new PagePrinters(q, vendor->name + " " + _L("Printers"), vendor->name, *vendor, indent, T_SLA);
         pageSLA->install = install;
         add_page(pageSLA);
     }
@@ -3236,11 +3232,11 @@ bool ConfigWizard::priv::check_and_install_missing_materials(Technology technolo
     	if (! printer_models_without_material.empty()) {
 			if (only_for_model_id.empty())
 				ask_and_select_default_materials(
-					_L("The following FFF printer models have no filament selected:") +
+					_L("The following printer models have no material selected:") +
 					"\n\n" +
 					printer_model_list(printer_models_without_material) +
 					"\n\n" +
-					_L("Do you want to select default filaments for these FFF printer models?"),
+					_L("Do you want to select default materials for these printer models?"),
 					printer_models_without_material,
 					T_FFF);
 			else
@@ -3254,11 +3250,11 @@ bool ConfigWizard::priv::check_and_install_missing_materials(Technology technolo
     	if (! printer_models_without_material.empty()) {
 	        if (only_for_model_id.empty())
 	            ask_and_select_default_materials(
-					_L("The following SLA printer models have no materials selected:") +
+					_L("The following printer models have no materials selected:") +
 	            	"\n\n" +
 				   	printer_model_list(printer_models_without_material) +
 					"\n\n" +
-					_L("Do you want to select default SLA materials for these printer models?"),
+					_L("Do you want to select default materials for these printer models?"),
 					printer_models_without_material,
 	            	T_SLA);
 	        else
@@ -3354,8 +3350,8 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
     }
 
     if (show_info_msg)
-        show_info(nullptr, _L("It's impossible to print object(s) which contains parameter modifiers with SLA technology.\n\n"
-                              "SLA-printer preset will not be selected"), caption);
+        show_info(nullptr, _L("Printing does not support objects containing parameter modifiers.\n\n"
+                              "The printer preset will not be selected"), caption);
 
     bool check_unsaved_preset_changes = page_welcome->reset_user_profile();
     if (check_unsaved_preset_changes)
@@ -3521,7 +3517,7 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
         if ((check_unsaved_preset_changes = !first_added_filament.empty() || !first_added_sla_material.empty())) {
             header = !first_added_filament.empty() ? 
                      _L("A new filament was installed and it will be activated.") :
-                     _L("A new SLA material was installed and it will be activated.");
+                     _L("A new material was installed and it will be activated.");
             if (!wxGetApp().check_and_keep_current_preset_changes(caption, header, act_btns, &apply_keeped_changes))
                 return false;
         }
@@ -3534,7 +3530,7 @@ bool ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
             bool is_filaments_changed     = changed(AppConfig::SECTION_FILAMENTS);
             bool is_sla_materials_changed = changed(AppConfig::SECTION_MATERIALS);
             if ((check_unsaved_preset_changes = is_filaments_changed || is_sla_materials_changed)) {
-                header = is_filaments_changed ? _L("Some filaments were uninstalled.") : _L("Some SLA materials were uninstalled.");
+                header = _L("Some materials were uninstalled.");
                 if (!wxGetApp().check_and_keep_current_preset_changes(caption, header, act_btns, &apply_keeped_changes))
                     return false;
             }
@@ -3885,29 +3881,14 @@ void ConfigWizard::priv::load_pages_from_archive()
 
     }
 
-    if (only_sla_mode && installed_multivendors_repos()) {
-        only_sla_mode = false;
-    }
-
-    if (!only_sla_mode) {
-        add_page(page_custom = new PageCustom(q));
-        custom_printer_selected = page_custom->custom_wanted();
-    }
-
     any_sla_selected = check_sla_selected();
-    any_fff_selected = !only_sla_mode && check_fff_selected();
-
-    if(!only_sla_mode && !page_filaments)
-        add_page(page_filaments = new PageMaterials(q, &filaments,
-            _L("Filament Profiles Selection"), _L("Filaments"), _L("Type:")));
+    any_fff_selected = false;
     if (!page_sla_materials)
         add_page(page_sla_materials = new PageMaterials(q, &sla_materials,
-            _L("SLA Material Profiles Selection") + " ", _L("SLA Materials"), _L("Type:")));
+            _L("Material Profiles Selection") + " ", _L("Materials"), _L("Type:")));
     
-    check_and_install_missing_materials(T_ANY);
-    update_materials(T_ANY);
-    if (any_fff_selected)
-        page_filaments->reload_presets();
+    check_and_install_missing_materials(T_SLA);
+    update_materials(T_SLA);
 
     if (any_sla_selected)
         page_sla_materials->reload_presets();

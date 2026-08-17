@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -1457,7 +1458,7 @@ void SLAPrint::Steps::merge_slices_and_eval_stats() {
 
     report_status(-2, "", SlicingStatus::RELOAD_SLA_PREVIEW);
 
-    BOOST_LOG_TRIVIAL(debug) << "SLA merge: running corkscrew box verification"
+    BOOST_LOG_TRIVIAL(debug) << "Print merge: running corkscrew box verification"
         << " corkscrew_enable=" << m_print->default_object_config().corkscrew_enable.getBool()
         << " corkscrew_box_count=" << m_print->default_object_config().corkscrew_box_count.getInt()
         << " layers=" << m_print->print_layers().size();
@@ -1469,7 +1470,7 @@ void SLAPrint::Steps::rasterize()
 {
     if(canceled() || !m_print->m_archiver) return;
 
-    BOOST_LOG_TRIVIAL(debug) << "SLA rasterize: starting with "
+    BOOST_LOG_TRIVIAL(debug) << "Rasterize: starting with "
         << m_print->m_printer_input.size() << " layers"
         << ", png_export_dir="
         << (m_print->m_png_export_dir.empty() ? "(none)" : m_print->m_png_export_dir)

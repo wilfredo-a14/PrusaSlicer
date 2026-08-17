@@ -97,7 +97,7 @@ void print_debug_log_tail(size_t line_count)
     if (lines.empty())
         return;
 
-    boost::nowide::cout << "--- last " << lines.size() << " DLP debug log lines ---" << std::endl;
+    boost::nowide::cout << "--- last " << lines.size() << " debug log lines ---" << std::endl;
     for (const std::string &l : lines)
         boost::nowide::cout << l << std::endl;
 }

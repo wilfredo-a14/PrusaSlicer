@@ -518,9 +518,6 @@ private:
 	ogStaticText* m_machine_limits_description_line {nullptr};
 	void 		update_machine_limits_description(const MachineLimitsUsage usage);
 
-	ogStaticText*	m_fff_print_host_upload_description_line {nullptr};
-	ogStaticText*	m_sla_print_host_upload_description_line {nullptr};
-
     std::vector<PageShp>			m_pages_fff;
     std::vector<PageShp>			m_pages_sla;
 
@@ -531,14 +528,13 @@ public:
 	size_t		m_sys_extruders_count;
 	size_t		m_cache_extruder_count = 0;
 
-    PrinterTechnology               m_printer_technology = ptFFF;
+    PrinterTechnology               m_printer_technology = ptSLA;
 
     TabPrinter(wxBookCtrlBase* parent) :
-        Tab(parent, _L("Printers"), Slic3r::Preset::TYPE_PRINTER) {}
+        Tab(parent, _L("Printer"), Slic3r::Preset::TYPE_PRINTER) {}
 	~TabPrinter() {}
 
 	void		build() override;
-	void		build_print_host_upload_group(Page* page);
     void		build_fff();
     void		build_sla();
 	void		reload_config() override;
@@ -555,7 +551,7 @@ public:
 	void		build_unregular_pages(bool from_initial_build = false);
 	void		on_preset_loaded() override;
 	void		init_options_list() override;
-	bool 		supports_printer_technology(const PrinterTechnology /* tech */) const override { return true; }
+	bool 		supports_printer_technology(const PrinterTechnology tech) const override { return tech == ptSLA; }
 
 	wxSizer*	create_bed_shape_widget(wxWindow* parent);
 	void		cache_extruder_cnt(const DynamicPrintConfig* config = nullptr);
@@ -577,7 +573,7 @@ class TabSLAMaterial : public Tab
 
 public:
     TabSLAMaterial(wxBookCtrlBase* parent) :
-		Tab(parent, _L("Materials"), Slic3r::Preset::TYPE_SLA_MATERIAL) {}
+		Tab(parent, _L("Material"), Slic3r::Preset::TYPE_SLA_MATERIAL) {}
     ~TabSLAMaterial() {}
 
 	void		build() override;

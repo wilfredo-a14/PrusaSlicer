@@ -313,6 +313,11 @@ void TopBarItemsCtrl::UpdateSearchSizeAndPosition()
     if (!m_workspace_btn || !m_account_btn)
         return;
 
+    if (!m_workspace_btn->IsShown() && !m_account_btn->IsShown()) {
+        m_sizer->SetItemMinSize(1, wxSize(0, -1));
+        return;
+    }
+
     int em = em_unit(this);
 
     wxWindow* parent_win = GetParent()->GetParent();
@@ -457,6 +462,7 @@ TopBarItemsCtrl::TopBarItemsCtrl(wxWindow *parent, TopBarMenus* menus/* = nullpt
         m_workspace_btn->set_selected(true);
         m_menus->Popup(this, &m_menus->workspaces, m_workspace_btn->get_popup_pos());
     });
+    m_workspace_btn->Hide();
 
     m_account_btn = new ButtonWithPopup(this, _L("Log in"), "user", login_icon_sz, wxSize(180, -1));
     right_sizer->Add(m_account_btn, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxRIGHT, m_btn_margin);
@@ -465,10 +471,11 @@ TopBarItemsCtrl::TopBarItemsCtrl(wxWindow *parent, TopBarMenus* menus/* = nullpt
         m_account_btn->set_selected(true);
         m_menus->Popup(this, &m_menus->account, m_account_btn->get_popup_pos());
     });
+    m_account_btn->Hide();
 
     m_sizer->Add(right_sizer, 0, wxALIGN_CENTER_VERTICAL);
 
-    m_sizer->SetItemMinSize(1, wxSize(42 * wxGetApp().em_unit(), -1));
+    m_sizer->SetItemMinSize(1, wxSize(0, -1));
 
     update_btns_width();
 }
@@ -482,9 +489,11 @@ void TopBarItemsCtrl::UpdateMode()
     this->Layout();
 }
 
-void TopBarItemsCtrl::ShowUserAccount(bool show)
+void TopBarItemsCtrl::ShowUserAccount(bool /*show*/)
 {
-    m_account_btn->Show(show);
+    // This product has no account UI. Keep the control hidden even when
+    // upstream layout code asks to restore the full top bar.
+    m_account_btn->Hide();
     this->Layout();
 }
 
@@ -615,7 +624,9 @@ void TopBarItemsCtrl::ShowFull()
         m_menu_btn->Show();
     if (m_settings_btn)
         m_settings_btn->Show();
-    m_account_btn->Show();
+    m_workspace_btn->Hide();
+    m_account_btn->Hide();
+    m_sizer->SetItemMinSize(1, wxSize(0, -1));
     update_btns_width();
     UpdateSearchSizeAndPosition();
 }
@@ -626,7 +637,9 @@ void TopBarItemsCtrl::ShowJustMode()
         m_menu_btn->Hide();
     if (m_settings_btn)
         m_settings_btn->Hide();
+    m_workspace_btn->Hide();
     m_account_btn->Hide();
+    m_sizer->SetItemMinSize(1, wxSize(0, -1));
     update_btns_width();
     UpdateSearchSizeAndPosition();
 }

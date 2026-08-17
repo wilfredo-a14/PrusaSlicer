@@ -1052,7 +1052,7 @@ bool GLGizmoSlaSupports::on_is_selectable() const
 
 std::string GLGizmoSlaSupports::on_get_name() const
 {
-    return _u8L("SLA Support Points");
+    return _u8L("Support Points");
 }
 
 bool GLGizmoSlaSupports::ask_about_changes(std::function<void()> on_yes, std::function<void()> on_no)
@@ -1470,7 +1470,7 @@ void GLGizmoSlaSupports::update_point_raycasters_for_picking_transform()
 }
 
 SlaGizmoHelpDialog::SlaGizmoHelpDialog()
-: wxDialog(nullptr, wxID_ANY, _L("SLA gizmo keyboard shortcuts"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER)
+: wxDialog(nullptr, wxID_ANY, _L("Support gizmo keyboard shortcuts"), wxDefaultPosition, wxDefaultSize, wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER)
 {
     SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
     const wxString ctrl = GUI::shortkey_ctrl_prefix();

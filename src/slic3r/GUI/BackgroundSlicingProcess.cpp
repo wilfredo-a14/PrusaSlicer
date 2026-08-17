@@ -218,7 +218,7 @@ void BackgroundSlicingProcess::process_sla()
 			ThumbnailsList thumbnails = this->render_thumbnails(ThumbnailsParams{sizes, true, true, true, true });
 			m_sla_print->export_print(export_path, thumbnails);
 
-            m_print->set_status(100, GUI::format(_L("Masked SLA file exported to %1%"), export_path));
+            m_print->set_status(100, GUI::format(_L("Print file exported to %1%"), export_path));
         } else if (! m_upload_job.empty()) {
 			wxQueueEvent(GUI::wxGetApp().mainframe->m_plater, new wxCommandEvent(m_event_export_began_id));
             prepare_upload(m_upload_job);

@@ -276,6 +276,8 @@ set(SLIC3R_SOURCES
     FileReader.hpp
     MultiMaterialSegmentation.cpp
     MultiMaterialSegmentation.hpp
+    MultiBox/MultiBoxExporter.cpp
+    MultiBox/MultiBoxExporter.hpp
     MeshNormals.hpp
     MeshNormals.cpp
     Measure.hpp

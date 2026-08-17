@@ -1027,7 +1027,7 @@ bool GLGizmosManager::is_in_editing_mode(bool error_notification) const
         wxGetApp().plater()->get_notification_manager()->push_notification(
                     NotificationType::QuitSLAManualMode,
                     NotificationManager::NotificationLevel::ErrorNotificationLevel,
-                    _u8L("You are currently editing SLA support points. Please, "
+                    _u8L("You are currently editing support points. Please, "
                          "apply or discard your changes first."));
 
     return true;

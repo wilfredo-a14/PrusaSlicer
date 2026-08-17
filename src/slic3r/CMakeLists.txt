@@ -265,6 +265,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Jobs/SLAImportJob.hpp
     GUI/Jobs/SLAImportJob.cpp
     GUI/Jobs/ProgressIndicator.hpp
+    GUI/Jobs/MultiBoxExportJob.hpp
+    GUI/Jobs/MultiBoxExportJob.cpp
     GUI/Jobs/NotificationProgressIndicator.hpp
     GUI/Jobs/NotificationProgressIndicator.cpp
     GUI/Jobs/ThreadSafeQueue.hpp

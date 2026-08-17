@@ -361,12 +361,18 @@ void PrintConfigDef::init_common_params()
     def->label = L("Printer technology");
     def->tooltip = L("Printer technology");
     def->set_enum<PrinterTechnology>({ "FFF", "SLA" });
-    def->set_default_value(new ConfigOptionEnum<PrinterTechnology>(ptFFF));
+    def->cli = ConfigOptionDef::nocli;
+    def->set_default_value(new ConfigOptionEnum<PrinterTechnology>(ptSLA));
 
     def = this->add("bed_shape", coPoints);
     def->label = L("Bed shape");
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionPoints{ Vec2d(0, 0), Vec2d(200, 0), Vec2d(200, 200), Vec2d(0, 200) });
+    def->set_default_value(new ConfigOptionPoints{
+        Vec2d(0, 0),
+        Vec2d(dlp::DISPLAY_WIDTH_MM, 0),
+        Vec2d(dlp::DISPLAY_WIDTH_MM, dlp::DISPLAY_HEIGHT_MM),
+        Vec2d(0, dlp::DISPLAY_HEIGHT_MM)
+    });
 
     def = this->add("bed_custom_texture", coString);
     def->label = L("Bed custom texture");
@@ -414,7 +420,7 @@ void PrintConfigDef::init_common_params()
 
     def = this->add("max_print_height", coFloat);
     def->label = L("Max print height");
-    def->tooltip = L("Set this to the maximum height that can be reached by your extruder while printing.");
+    def->tooltip = L("Set the maximum vertical build height of the printer.");
     def->sidetext = L("mm");
     def->min = 0;
     def->max = 1200;
@@ -2479,7 +2485,7 @@ void PrintConfigDef::init_fff_params()
                    "[input_filename_base], [default_output_extension].");
     def->full_width = true;
     def->mode = comExpert;
-    def->set_default_value(new ConfigOptionString("[input_filename_base].gcode"));
+    def->set_default_value(new ConfigOptionString("[input_filename_base].sl1"));
 
     def = this->add("overhangs", coBool);
     def->label = L("Detect bridging perimeters");
@@ -4272,12 +4278,14 @@ void PrintConfigDef::init_sla_params()
     def = this->add("display_width", coFloat);
     def->label = L("Display width");
     def->tooltip = L("Width of the display");
+    def->sidetext = L("mm");
     def->min = 1;
     def->set_default_value(new ConfigOptionFloat(Slic3r::dlp::DISPLAY_WIDTH_MM));
 
     def = this->add("display_height", coFloat);
-    def->label = L("Display height");
-    def->tooltip = L("Height of the display");
+    def->label = L("Display length");
+    def->tooltip = L("Length of the display");
+    def->sidetext = L("mm");
     def->min = 1;
     def->set_default_value(new ConfigOptionFloat(Slic3r::dlp::DISPLAY_HEIGHT_MM));
 
@@ -4310,7 +4318,7 @@ void PrintConfigDef::init_sla_params()
 
     def = this->add("display_orientation", coEnum);
     def->label = L("Display orientation");
-    def->tooltip = L("Set the actual LCD display orientation inside the SLA printer."
+    def->tooltip = L("Set the actual LCD display orientation inside the printer."
                      " Portrait mode will flip the meaning of display width and height parameters"
                      " and the output images will be rotated by 90 degrees.");
     def->set_enum<SLADisplayOrientation>({
@@ -4437,8 +4445,8 @@ void PrintConfigDef::init_sla_params()
     def->set_default_value(new ConfigOptionString("#29B2B2"));
 
     def = this->add("material_type", coString);
-    def->label = L("SLA material type");
-    def->tooltip = L("SLA material type");
+    def->label = L("Material type");
+    def->tooltip = L("Material type");
     def->gui_flags = "show_value";
     def->set_enum_values(ConfigOptionDef::GUIType::select_open,
         { "Tough", "Flexible", "Casting", "Dental", "Heat-resistant" });
@@ -4571,8 +4579,8 @@ void PrintConfigDef::init_sla_params()
     def->set_default_value(new ConfigOptionFloat(1.));
 
     def = this->add("material_notes", coString);
-    def->label = L("SLA print material notes");
-    def->tooltip = L("You can put your notes regarding the SLA print material here.");
+    def->label = L("Material notes");
+    def->tooltip = L("You can put your notes regarding the material here.");
     def->multiline = true;
     def->full_width = true;
     def->height = 13;
@@ -4586,7 +4594,7 @@ void PrintConfigDef::init_sla_params()
     def->cli = ConfigOptionDef::nocli;
 
     def = this->add("default_sla_material_profile", coString);
-    def->label = L("Default SLA material profile");
+    def->label = L("Default material profile");
     def->tooltip = L("Default print profile associated with the current printer profile. "
                    "On selection of the current printer profile, this print profile will be activated.");
     def->set_default_value(new ConfigOptionString());
@@ -4597,7 +4605,7 @@ void PrintConfigDef::init_sla_params()
     def->cli = ConfigOptionDef::nocli;
 
     def = this->add("default_sla_print_profile", coString);
-    def->label = L("Default SLA material profile");
+    def->label = L("Default material profile");
     def->tooltip = L("Default print profile associated with the current printer profile. "
                    "On selection of the current printer profile, this print profile will be activated.");
     def->set_default_value(new ConfigOptionString());
@@ -4612,7 +4620,7 @@ void PrintConfigDef::init_sla_params()
     def->category = L("Supports");
     def->tooltip = L("Generate supports for the models");
     def->mode = comSimple;
-    def->set_default_value(new ConfigOptionBool(true));
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("support_tree_type", coEnum);
     def->label = L("Support tree type");
@@ -4649,7 +4657,7 @@ void PrintConfigDef::init_sla_params()
     def->category = L("Pad");
     def->tooltip = L("Add a pad underneath the supported model");
     def->mode = comSimple;
-    def->set_default_value(new ConfigOptionBool(true));
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("pad_wall_thickness", coFloat);
     def->label = L("Pad wall thickness");
@@ -4829,12 +4837,14 @@ void PrintConfigDef::init_sla_params()
     def->set_default_value(new ConfigOptionEnum<SLAMaterialSpeed>(slamsFast));
 
     def = this->add("sla_archive_format", coString);
-    def->label = L("Format of the output SLA archive");
+    def->label = L("Output archive format");
+    def->cli = "archive-format";
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionString("SL1"));
 
     def = this->add("sla_output_precision", coFloat);
-    def->label = L("SLA output precision");
+    def->label = L("Output precision");
+    def->cli = "output-precision";
     def->tooltip = L("Minimum resolution in nanometers");
     def->sidetext = L("mm");
     def->min = float(SCALING_FACTOR);
@@ -5775,8 +5785,7 @@ CLIInputConfigDef::CLIInputConfigDef()
 
     def = this->add("material-profile", coStrings);
     def->label = ("Material preset name(s)");
-    def->tooltip = ("Name(s) of the material preset(s) used for slicing.\n"
-        "Could be filaments or sla_material preset name(s) depending on printer tochnology");
+    def->tooltip = ("Name(s) of the material preset(s) used for slicing.");
     def->set_default_value(new ConfigOptionStrings());
 }
 
@@ -5792,40 +5801,19 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->cli = "help|h";
     def->set_default_value(new ConfigOptionBool(false));
 
-    def = this->add("help_fff", coBool);
-    def->label = L("Help (FFF options)");
-    def->tooltip = L("Show the full list of print/G-code configuration options.");
-    def->set_default_value(new ConfigOptionBool(false));
-
     def = this->add("help_sla", coBool);
-    def->label = L("Help (SLA options)");
-    def->tooltip = L("Show the full list of SLA print configuration options.");
+    def->label = L("Help (print options)");
+    def->tooltip = L("Show the full list of print configuration options.");
+    def->cli = "help-print";
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("query-printer-models", coBool);
     def->label = ("Get list of printer models");
     def->tooltip = ("Get list of installed printer models into JSON.\n"
         "Note:\n"
-        "Printer technology is SLA.\n"
+        "This build uses a single printer technology.\n"
         "To print out JSON into file use 'output' option.\n"
         "To specify configuration folder use 'datadir' option.");
-
-    // needs a --printer-profile input
-
-    def = this->add("query-print-filament-profiles", coBool);
-    def->label = ("Get list of print profiles and filament profiles for the selected printer profile");
-    def->tooltip = ("Get list of print profiles and filament profiles for the selected 'printer-profile' into JSON.\n"
-        "Note:\n"
-        "To print out JSON into file use 'output' option.\n"
-        "To specify configuration folder use 'datadir' option.");
-
-    // needs nothing or input just one *.gcode file
-
-    def = this->add("gcodeviewer", coBool);
-    def->label = L("G-code viewer");
-    def->tooltip = L("Visualize an already sliced and saved G-code");
-    def->cli = "gcodeviewer";
-    def->set_default_value(new ConfigOptionBool(false));
 
     // needs a configuration input
 
@@ -5863,20 +5851,14 @@ CLIActionsConfigDef::CLIActionsConfigDef()
 
     def = this->add("slice", coBool);
     def->label = L("Slice");
-    def->tooltip = L("Slice the model as SLA and export the result.");
+    def->tooltip = L("Slice the model and export the result.");
     def->cli = "slice|s";
     def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("export_sla", coBool);
-    def->label = L("Export SLA");
-    def->tooltip = L("Slice the model and export SLA printing layers as PNG.");
-    def->cli = "export-sla|sla";
-    def->set_default_value(new ConfigOptionBool(false));
-
-    def = this->add("export_gcode", coBool);
-    def->label = L("Export G-code");
-    def->tooltip = L("Slice the model and export toolpaths as G-code.");
-    def->cli = "export-gcode|gcode|g";
+    def->label = L("Export print");
+    def->tooltip = L("Slice the model and export printing layers.");
+    def->cli = "export-print";
     def->set_default_value(new ConfigOptionBool(false));
 }
 
@@ -5980,7 +5962,7 @@ CLIMiscConfigDef::CLIMiscConfigDef()
 
     def = this->add("export_png_dir", coString);
     def->label = L("Export PNG directory");
-    def->tooltip = L("Export rasterized SLA layers as PNG files to this directory (headless DLP testing).");
+    def->tooltip = L("Export rasterized layers as PNG files to this directory for headless testing.");
     def->cli = "export-png-dir";
 
     def = this->add("datadir", coString);

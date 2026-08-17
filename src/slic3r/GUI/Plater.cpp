@@ -54,6 +54,7 @@
 #include <wx/progdlg.h>
 #include <wx/wupdlock.h>
 #include <wx/numdlg.h>
+#include <wx/textdlg.h>
 #include <wx/debug.h>
 #include <wx/busyinfo.h>
 #include <wx/stdpaths.h>
@@ -74,6 +75,8 @@
 #include "libslic3r/SLA/ReprojectPointsOnMesh.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "Jobs/MultiBoxExportJob.hpp"
+#include "Jobs/Worker.hpp"
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -300,6 +303,7 @@ struct Plater::priv
      
     BackgroundSlicingProcess    background_process;
     bool suppressed_backround_processing_update { false };
+    bool dlp_print_confirmation_pending { false };
 
     // TODO: A mechanism would be useful for blocking the plater interactions:
     // objects would be frozen for the user. In case of arrange, an animation
@@ -1341,7 +1345,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
         if (type_printRequest && printer_technology != ptSLA) {
             Slic3r::GUI::show_info(nullptr,
-                _L("PrintRequest can only be loaded if an SLA printer is selected."),
+                _L("PrintRequest can only be loaded if a printer is selected."),
                 _L("Error!"));
             continue;
         }
@@ -1536,17 +1540,6 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     if (/*!type_printRequest && */answer == wxID_YES) //! type_printRequest is no need here, SLA allow multipart object now
                         ModelProcessing::convert_to_multipart_object(model, nozzle_dmrs->size());
                 }
-            }
-
-            if ((wxGetApp().get_mode() == comSimple) && type_3mf && model_has_advanced_features(model)) {
-                MessageDialog msg_dlg(q, _L("This file cannot be loaded in a simple mode. Do you want to switch to an advanced mode?")+"\n",
-                    _L("Detected advanced data"), wxICON_WARNING | wxOK | wxCANCEL);
-                if (msg_dlg.ShowModal() == wxID_OK) {
-                    if (wxGetApp().save_mode(comAdvanced))
-                        view3D->set_as_dirty();
-                }
-                else
-                    continue;// return obj_idxs;
             }
 
             for (ModelObject* model_object : model.objects) {
@@ -3498,6 +3491,14 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
             notification_manager->push_exporting_finished_notification(last_output_path, last_output_dir_path, false);
     }
     exporting_status = ExportingStatus::NOT_EXPORTING;
+
+    // Choosing a DLP export folder already authorized slicing and PNG export.
+    // Ask for print confirmation only after that work has completed successfully.
+    if (dlp_print_confirmation_pending) {
+        dlp_print_confirmation_pending = false;
+        if (evt.success() && printer_technology == ptSLA)
+            confirm_dlp_print(q, q->active_sla_print());
+    }
 }
 
 void Plater::priv::on_layer_editing_toggled(bool enable)
@@ -4235,11 +4236,10 @@ void Plater::priv::undo_redo_to(std::vector<UndoRedo::Snapshot>::const_iterator 
     bool 				printer_technology_changed 	= this->printer_technology != new_printer_technology;
     if (printer_technology_changed) {
         // Switching the printer technology when jumping forwards / backwards in time. Switch to the last active printer profile of the other type.
-        std::string s_pt = (it_snapshot->snapshot_data.printer_technology == ptFFF) ? "FFF" : "SLA";
         if (!wxGetApp().check_and_save_current_preset_changes(_L("Undo / Redo is processing"), 
 //            format_wxstr(_L("%1% printer was active at the time the target Undo / Redo snapshot was taken. Switching to %1% printer requires reloading of %1% presets."), s_pt)))
-            format_wxstr(_L("Switching the printer technology from %1% to %2%.\n"
-                            "Some %1% presets were modified, which will be lost after switching the printer technology."), s_pt =="FFF" ? "SLA" : "FFF", s_pt), false))
+            _L("Switching the printer configuration.\n"
+               "Some presets were modified and will be lost after switching."), false))
             // Don't switch the profiles.
             return;
     }
@@ -4327,13 +4327,6 @@ void Plater::priv::update_after_undo_redo(const UndoRedo::Snapshot& snapshot, bo
 
     s_multiple_beds.update_shown_beds(model, q->build_volume(), false);
     wxGetApp().obj_list()->update_after_undo_redo();
-
-    if (wxGetApp().get_mode() == comSimple && model_has_advanced_features(this->model)) {
-        // If the user jumped to a snapshot that require user interface with advanced features, switch to the advanced mode without asking.
-        // There is a little risk of surprising the user, as he already must have had the advanced or expert mode active for such a snapshot to be taken.
-        if (wxGetApp().save_mode(comAdvanced))
-            view3D->set_as_dirty();
-    }
 
 	// this->update() above was called with POSTPONE_VALIDATION_ERROR_MESSAGE, so that if an error message was generated when updating the back end, it would not open immediately, 
 	// but it would be saved to be show later. Let's do it now. We do not want to display the message box earlier, because on Windows & OSX the message box takes over the message
@@ -4520,7 +4513,7 @@ void Plater::import_sl1_archive()
 {
     auto &w = get_ui_job_worker();
     if (w.is_idle() && p->m_sla_import_dlg->ShowModal() == wxID_OK) {
-        p->take_snapshot(_L("Import SLA archive"));
+        p->take_snapshot(_L("Import print archive"));
         replace_job(w, std::make_unique<SLAImportJob>(p->m_sla_import_dlg));
     }
 }
@@ -6402,7 +6395,50 @@ void Plater::export_toolpaths_to_obj() const
     p->preview->get_canvas3d()->export_toolpaths_to_obj(into_u8(path).c_str());
 }
 
-void Plater::reslice()
+void Plater::export_multibox_pngs()
+{
+    if (printer_technology() != ptSLA)
+        return;
+
+    if (p->background_process.running()) {
+        GUI::show_error(this, _L("Please wait for slicing to finish."));
+        return;
+    }
+
+    SLAPrint &print = this->active_sla_print();
+    if (print.print_layers().empty()) {
+        GUI::show_error(this, _L("Please slice the plate before exporting multi-box PNGs."));
+        return;
+    }
+
+    wxDirDialog dir_dlg(this, _L("Choose multi-box PNG export directory:"), "", wxDD_DEFAULT_STYLE);
+    if (dir_dlg.ShowModal() != wxID_OK)
+        return;
+
+    std::string default_name = "Project";
+    if (!model().objects.empty() && !model().objects.front()->name.empty())
+        default_name = model().objects.front()->name;
+
+    wxTextEntryDialog name_dlg(this, _L("Enter project name for exported files:"), _L("Project name"),
+        from_u8(default_name));
+    if (name_dlg.ShowModal() != wxID_OK)
+        return;
+
+    std::string output_dir   = into_u8(dir_dlg.GetPath());
+    std::string project_name = into_u8(name_dlg.GetValue());
+    if (project_name.empty())
+        project_name = default_name;
+
+    if (!get_ui_job_worker().is_idle()) {
+        GUI::show_error(this, _L("Please wait for the current background task to finish."));
+        return;
+    }
+
+    replace_job(get_ui_job_worker(),
+        std::make_unique<MultiBoxExportJob>(&print, this, std::move(output_dir), std::move(project_name)));
+}
+
+void Plater::reslice(bool user_initiated_print)
 {
     // There is "invalid data" button instead "slice now"
     if (!is_sliceable(s_print_statuses[s_multiple_beds.get_active_bed()]))
@@ -6427,8 +6463,15 @@ void Plater::reslice()
             if (object->sla_points_status == sla::PointsStatus::NoPoints)
                 object->sla_points_status = sla::PointsStatus::Generating;
 
-        // Show folder picker for PNG layer export
-        prompt_png_export_dir(this, active_sla_print());
+        // Preview refreshes may reslice internally. Only an explicit press of
+        // Slice now may select an export folder and start the print workflow.
+        if (user_initiated_print) {
+            if (!prepare_dlp_print(this, active_sla_print()))
+                return;
+            p->dlp_print_confirmation_pending = true;
+        } else {
+            active_sla_print().set_png_export_dir("");
+        }
     }
 
     //FIXME Don't reslice if export of G-code or sending to OctoPrint is running.
@@ -6441,8 +6484,10 @@ void Plater::reslice()
     // Only restarts if the state is valid.
     this->p->restart_background_process(state | priv::UPDATE_BACKGROUND_PROCESS_FORCE_RESTART);
 
-    if ((state & priv::UPDATE_BACKGROUND_PROCESS_INVALID) != 0)
+    if ((state & priv::UPDATE_BACKGROUND_PROCESS_INVALID) != 0) {
+        p->dlp_print_confirmation_pending = false;
         return;
+    }
 
     bool clean_gcode_toolpaths = true;
     if (p->background_process.running())
@@ -7274,6 +7319,7 @@ const DynamicPrintConfig * Plater::config() const { return p->config; }
 
 bool Plater::set_printer_technology(PrinterTechnology printer_technology)
 {
+    printer_technology = ptSLA;
     p->printer_technology = printer_technology;
     bool ret = p->background_process.select_technology(printer_technology);
     if (ret) {
@@ -7289,8 +7335,8 @@ bool Plater::set_printer_technology(PrinterTechnology printer_technology)
         }
     }
 
-    p->label_btn_export = printer_technology == ptFFF ? L("Export G-code") : L("Export");
-    p->label_btn_send   = printer_technology == ptFFF ? L("Send G-code")   : L("Send to printer");
+    p->label_btn_export = L("Export Print");
+    p->label_btn_send   = L("Send Print");
 
     if (wxGetApp().mainframe != nullptr)
         wxGetApp().mainframe->update_menubar();

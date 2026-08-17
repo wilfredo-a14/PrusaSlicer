@@ -273,9 +273,6 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
     if (actions.has("help")) {
         print_help();
     }
-    if (actions.has("help_fff")) {
-        print_help(true, ptFFF);
-    }
     if (actions.has("help_sla")) {
         print_help(true, ptSLA);
     }
@@ -322,14 +319,10 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
             return 1;
     }
 
-    if (actions.has("slice") || actions.has("export_gcode") || actions.has("export_sla")) {
+    if (actions.has("slice") || actions.has("export_sla")) {
         PrinterTechnology       printer_technology = Preset::printer_technology(print_config);
-        if (actions.has("export_gcode") && printer_technology == ptSLA) {
-            boost::nowide::cerr << "error: cannot export G-code for an FFF configuration" << std::endl;
-            return 1;
-        }
-        else if (actions.has("export_sla") && printer_technology == ptFFF) {
-            boost::nowide::cerr << "error: cannot export SLA slices for a SLA configuration" << std::endl;
+        if (printer_technology != ptSLA) {
+            boost::nowide::cerr << "error: this configuration is not supported by this build" << std::endl;
             return 1;
         }
 
@@ -362,13 +355,13 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
                 const bool mirror = mirror_env && mirror_env[0] == '1';
                 dlp::set_debug_log_mirror_stdout(mirror);
                 dlp::debug_log(Slic3r::format(
-                    "CLI: SLA headless slice — debug log mirror_stdout=%1%",
+                    "CLI: headless slice — debug log mirror_stdout=%1%",
                     mirror ? "true" : "false"));
                 if (cli.misc_config.has("export_png_dir")) {
                     const std::string png_dir = cli.misc_config.opt_string("export_png_dir");
                     sla_print.set_png_export_dir(png_dir);
                     dlp::debug_log(Slic3r::format("CLI: PNG export directory set to %1%", png_dir));
-                    boost::nowide::cout << "DLP: PNG layer export directory set to " << png_dir << std::endl;
+                    boost::nowide::cout << "PNG layer export directory set to " << png_dir << std::endl;
                 } else {
                     dlp::debug_log("CLI: no --export-png-dir provided — PNG layer export disabled");
                 }
@@ -426,13 +419,13 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
                     if (sla_print.default_object_config().corkscrew_enable.getBool()) {
                         const dlp::CorkscrewVerificationResult &verify = dlp::last_corkscrew_verification();
                         if (verify.ran) {
-                            boost::nowide::cout << "DLP corkscrew verification: "
+                            boost::nowide::cout << "Corkscrew verification: "
                                 << (verify.ok ? "PASSED" : "FAILED")
                                 << " (" << verify.layer_count << " layers";
                             if (verify.failed_layers > 0)
                                 boost::nowide::cout << ", " << verify.failed_layers << " failed";
                             boost::nowide::cout << ")" << std::endl;
-                            boost::nowide::cout << "DLP debug log: " << dlp::debug_log_path() << std::endl;
+                            boost::nowide::cout << "Debug log: " << dlp::debug_log_path() << std::endl;
                             dlp::print_debug_log_tail(10);
                             if (!verify.ok)
                                 return false;
@@ -442,7 +435,7 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
                         dlp::print_debug_log_tail(10);
                     }
                     if (!sla_print.png_export_dir().empty())
-                        boost::nowide::cout << "DLP: exported PNG layers to "
+                        boost::nowide::cout << "Exported PNG layers to "
                             << sla_print.png_export_dir() << std::endl;
                 }
                 if (outfile != outfile_final) {

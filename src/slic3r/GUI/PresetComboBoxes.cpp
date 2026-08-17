@@ -262,7 +262,8 @@ static wxString get_preset_name_with_suffix(const Preset & preset)
 
 static bool show_preset_in_dlp_only_ui(Preset::Type type, const Preset& preset)
 {
-    return type != Preset::TYPE_PRINTER || (preset.is_default && preset.printer_technology() == ptSLA);
+    return type != Preset::TYPE_PRINTER ||
+           (preset.printer_technology() == ptSLA && (preset.is_default || !preset.is_system));
 }
 
 void PresetComboBox::update(std::string select_preset_name)

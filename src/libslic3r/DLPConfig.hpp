@@ -19,6 +19,15 @@ constexpr double DISPLAY_HEIGHT_MM = DISPLAY_WIDTH_MM * DISPLAY_PIXELS_Y / DISPL
 #define DLP_PRINT_OBJECT_CONFIG_OPTIONS \
     ((ConfigOptionBool, corkscrew_enable)) \
     ((ConfigOptionInt,  corkscrew_box_count)) \
+    ((ConfigOptionFloat, multibox_angle_between_boxes)) \
+    ((ConfigOptionInt, multibox_box_height_px)) \
+    ((ConfigOptionInt, multibox_box_width_px)) \
+    ((ConfigOptionFloat, multibox_fab_height_mm)) \
+    ((ConfigOptionFloat, multibox_fab_width_mm)) \
+    ((ConfigOptionInt, multibox_num_boxes)) \
+    ((ConfigOptionFloat, multibox_pixel_scale_um)) \
+    ((ConfigOptionFloat, multibox_radius_mm)) \
+    ((ConfigOptionFloat, multibox_starting_angle)) \
     ((ConfigOptionFloat, dlp_starting_position)) \
     ((ConfigOptionString, dlp_motion_mode)) \
     ((ConfigOptionFloat, dlp_stage_velocity)) \
@@ -121,6 +130,10 @@ constexpr double DISPLAY_HEIGHT_MM = DISPLAY_WIDTH_MM * DISPLAY_PIXELS_Y / DISPL
 #define DLP_SLA_PRINT_PRESET_OPTION_ENTRIES \
     "corkscrew_enable", \
     "corkscrew_box_count", \
+    "multibox_angle_between_boxes", "multibox_box_height_px", \
+    "multibox_box_width_px", "multibox_fab_height_mm", "multibox_fab_width_mm", \
+    "multibox_num_boxes", "multibox_pixel_scale_um", "multibox_radius_mm", \
+    "multibox_starting_angle", \
     "dlp_starting_position", "dlp_motion_mode", "dlp_stage_velocity", \
     "dlp_stage_acceleration", "dlp_jerk_time", "dlp_end_position_min", \
     "dlp_end_position_max", "dlp_stage_pumping", "dlp_pumping_depth", \

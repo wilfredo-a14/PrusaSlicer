@@ -112,6 +112,7 @@ class MainFrame : public DPIFrame
     bool can_start_new_project() const;
     bool can_export_model() const;
     bool can_export_toolpaths() const;
+    bool can_export_multibox_pngs() const;
     bool can_export_supports() const;
     bool can_export_gcode() const;
     bool can_send_gcode() const;

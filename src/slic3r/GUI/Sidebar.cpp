@@ -223,6 +223,92 @@ void SlicedInfo::SetTextAndShow(SlicedInfoIdx idx, const wxString& text, const w
     info_vec[idx].second->Show(show);
 }
 
+class PlaterPrintSettings
+{
+public:
+    explicit PlaterPrintSettings(wxWindow* parent)
+    {
+        PresetBundle* presets = wxGetApp().preset_bundle;
+        sync_bed_shape();
+
+        m_display = std::make_shared<ConfigOptionsGroup>(
+            parent, _L("Display size"), &presets->printers.get_edited_preset().config);
+        m_display->append_single_option_line("display_width");
+        m_display->append_single_option_line("display_height");
+        m_display->on_change = [](t_config_option_key, boost::any) {
+            apply_change(Preset::TYPE_PRINTER);
+        };
+        m_display->activate();
+
+        m_layers = std::make_shared<ConfigOptionsGroup>(
+            parent, _L("Layer settings"), &presets->sla_prints.get_edited_preset().config);
+        m_layers->append_single_option_line("layer_height");
+        m_layers->on_change = [](t_config_option_key, boost::any) {
+            apply_change(Preset::TYPE_SLA_PRINT);
+        };
+        m_layers->activate();
+
+        m_sizer = new wxBoxSizer(wxVERTICAL);
+        m_sizer->Add(m_display->sizer, 0, wxEXPAND);
+        m_sizer->Add(m_layers->sizer, 0, wxEXPAND | wxTOP, int(0.5 * wxGetApp().em_unit()));
+    }
+
+    wxSizer* get_sizer() const { return m_sizer; }
+
+    void reload_config()
+    {
+        PresetBundle* presets = wxGetApp().preset_bundle;
+        sync_bed_shape();
+        m_display->set_config(&presets->printers.get_edited_preset().config);
+        m_layers->set_config(&presets->sla_prints.get_edited_preset().config);
+        m_display->reload_config();
+        m_layers->reload_config();
+    }
+
+    void msw_rescale()
+    {
+        m_display->msw_rescale();
+        m_layers->msw_rescale();
+    }
+
+    void sys_color_changed()
+    {
+        m_display->sys_color_changed();
+        m_layers->sys_color_changed();
+    }
+
+private:
+    static void apply_change(Preset::Type preset_type)
+    {
+        if (preset_type == Preset::TYPE_PRINTER)
+            sync_bed_shape();
+
+        if (Tab* tab = wxGetApp().get_tab(preset_type)) {
+            tab->update_dirty();
+            tab->reload_config();
+            tab->update();
+        }
+
+        Plater* plater = wxGetApp().plater();
+        plater->on_config_change(wxGetApp().preset_bundle->full_config());
+        plater->update_project_dirty_from_presets();
+    }
+
+    static void sync_bed_shape()
+    {
+        DynamicPrintConfig& config = wxGetApp().preset_bundle->printers.get_edited_preset().config;
+        const double width  = config.opt_float("display_width");
+        const double length = config.opt_float("display_height");
+        config.set_key_value("bed_shape", new ConfigOptionPoints{
+            Vec2d(0, 0), Vec2d(width, 0), Vec2d(width, length), Vec2d(0, length)
+        });
+    }
+
+    wxSizer* m_sizer { nullptr };
+    std::shared_ptr<ConfigOptionsGroup> m_display;
+    std::shared_ptr<ConfigOptionsGroup> m_layers;
+};
+
 
 // Sidebar / private
 
@@ -236,7 +322,8 @@ void Sidebar::show_preset_comboboxes()
     for (size_t i = 4; i < 8; ++i)
         m_presets_sizer->Show(i, showSLA);
 
-    m_frequently_changed_parameters->Show(!showSLA);
+    m_frequently_changed_parameters->get_og(true)->Show(false);
+    m_frequently_changed_parameters->get_og(false)->Show(false);
 
     m_scrolled_panel->GetParent()->Layout();
     m_scrolled_panel->Refresh();
@@ -402,19 +489,16 @@ Sidebar::Sidebar(Plater *parent)
     m_combos_filament.push_back(nullptr);
     init_combo(&m_combo_print,         _L("Print settings"),     Preset::TYPE_PRINT,         false);
     init_combo(&m_combos_filament[0],  _L("Filament"),           Preset::TYPE_FILAMENT,      true);
-    init_combo(&m_combo_sla_print,     _L("SLA print settings"), Preset::TYPE_SLA_PRINT,     false);
-    init_combo(&m_combo_sla_material,  _L("SLA material"),       Preset::TYPE_SLA_MATERIAL,  false);
-    init_combo(&m_combo_printer,       _L("Printer"),            Preset::TYPE_PRINTER,       false);
+    init_combo(&m_combo_sla_print,     _L("Print settings"), Preset::TYPE_SLA_PRINT,     false);
+    init_combo(&m_combo_sla_material,  _L("Material"),       Preset::TYPE_SLA_MATERIAL,  false);
+    init_combo(&m_combo_printer,       _L("Printer"),        Preset::TYPE_PRINTER,       false);
 
     wxBoxSizer* params_sizer = new wxBoxSizer(wxVERTICAL);
 
     // Frequently changed parameters
     m_frequently_changed_parameters = std::make_unique<FreqChangedParams>(m_scrolled_panel);
-    params_sizer->Add(m_frequently_changed_parameters->get_sizer(), 0, wxEXPAND | wxTOP | wxBOTTOM
-#ifdef __WXGTK3__
-        | wxRIGHT
-#endif // __WXGTK3__
-        , wxOSX ? 1 : margin_5);
+    m_frequently_changed_parameters->get_og(true)->Show(false);
+    m_frequently_changed_parameters->get_og(false)->Show(false);
 
     // Object List
     m_object_list = new ObjectList(m_scrolled_panel);
@@ -424,6 +508,10 @@ Sidebar::Sidebar(Plater *parent)
     m_object_manipulation = std::make_unique<ObjectManipulation>(m_scrolled_panel);
     m_object_manipulation->Hide();
     params_sizer->Add(m_object_manipulation->get_sizer(), 0, wxEXPAND | wxTOP, margin_5);
+
+    // Core print dimensions belong next to the object being prepared.
+    m_plater_print_settings = std::make_unique<PlaterPrintSettings>(m_scrolled_panel);
+    params_sizer->Add(m_plater_print_settings->get_sizer(), 0, wxEXPAND | wxTOP, margin_5);
 
     // Frequently Object Settings
     m_object_settings = std::make_unique<ObjectSettings>(m_scrolled_panel);
@@ -478,10 +566,10 @@ Sidebar::Sidebar(Plater *parent)
         (*btn)->Hide();
     };
 
-    init_scalable_btn(&m_btn_send_gcode   , "export_gcode", _L("Send to printer") + " " +GUI::shortkey_ctrl_prefix() + "Shift+G");
+    init_scalable_btn(&m_btn_send_gcode   , "export_gcode", _L("Send print") + " " +GUI::shortkey_ctrl_prefix() + "Shift+G");
 	init_scalable_btn(&m_btn_export_gcode_removable, "export_to_sd", _L("Export to SD card / Flash drive") + " " + GUI::shortkey_ctrl_prefix() + "U");
 
-    // regular buttons "Slice now" and "Export G-code" 
+    // Regular DLP slicing and export buttons.
 
 #ifdef _WIN32
     const int scaled_height = m_btn_export_gcode_removable->GetBitmapHeight();
@@ -496,7 +584,7 @@ Sidebar::Sidebar(Plater *parent)
         wxGetApp().UpdateDarkUI((*btn), true);
     };
 
-    init_btn(&m_btn_export_gcode, _L("Export G-code") + dots , scaled_height);
+    init_btn(&m_btn_export_gcode, _L("Export Print") + dots , scaled_height);
     init_btn(&m_btn_reslice     , _L("Slice now")            , scaled_height);
     init_btn(&m_btn_connect_gcode, _L("Send to Connect"), scaled_height);
 
@@ -552,8 +640,7 @@ Sidebar::Sidebar(Plater *parent)
         if (export_gcode_after_slicing)
             m_plater->export_gcode(true);
         else
-            m_plater->reslice();
-        m_plater->select_view_3D("Preview");
+            m_plater->reslice(true);
     });
 
 #ifdef _WIN32
@@ -699,6 +786,8 @@ void Sidebar::update_presets(Preset::Type preset_type)
     default: break;
     }
 
+    m_plater_print_settings->reload_config();
+
     // Synchronize config.ini with the current selections.
     wxGetApp().preset_bundle->export_selections(*wxGetApp().app_config);
 }
@@ -801,6 +890,7 @@ void Sidebar::msw_rescale()
     m_frequently_changed_parameters->msw_rescale();
     m_object_list                  ->msw_rescale();
     m_object_manipulation          ->msw_rescale();
+    m_plater_print_settings        ->msw_rescale();
     m_object_layers                ->msw_rescale();
 
 #ifdef _WIN32
@@ -840,6 +930,7 @@ void Sidebar::sys_color_changed()
 
     m_object_list        ->sys_color_changed();
     m_object_manipulation->sys_color_changed();
+    m_plater_print_settings->sys_color_changed();
     m_object_layers      ->sys_color_changed();
 
     // btn...->msw_rescale() updates icon on button, so use it
@@ -1261,6 +1352,7 @@ void Sidebar::collapse(bool collapse)
 void Sidebar::update_ui_from_settings()
 {
     m_object_manipulation->update_ui_from_settings();
+    m_plater_print_settings->reload_config();
     show_info_sizer();
     update_sliced_info_sizer();
     m_object_list->apply_volumes_order();

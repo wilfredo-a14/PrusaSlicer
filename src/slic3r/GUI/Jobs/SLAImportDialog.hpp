@@ -87,13 +87,13 @@ class SLAImportDialog: public wxDialog, public SLAImportJobView {
 
 public:
     SLAImportDialog(Plater *plater)
-        : wxDialog{plater, wxID_ANY, "Import SLA archive"}
+        : wxDialog{plater, wxID_ANY, "Import print archive"}
     {
         auto szvert = new wxBoxSizer{wxVERTICAL};
         auto szfilepck = new wxBoxSizer{wxHORIZONTAL};
 
         m_filepicker = new wxFilePickerCtrl(this, wxID_ANY,
-                                            from_u8(wxGetApp().app_config->get_last_dir()), _L("Choose SLA archive") + ":",
+                                            from_u8(wxGetApp().app_config->get_last_dir()), _L("Choose print archive") + ":",
                                             get_readers_wildcard(),
                                             wxDefaultPosition, wxDefaultSize, wxFLP_DEFAULT_STYLE | wxFD_OPEN | wxFD_FILE_MUST_EXIST);
 

@@ -1651,8 +1651,8 @@ std::string PresetCollection::name() const
     switch (this->type()) {
     case Preset::TYPE_PRINT:        return L("print");
     case Preset::TYPE_FILAMENT:     return L("filament");
-    case Preset::TYPE_SLA_PRINT:    return L("SLA print");
-    case Preset::TYPE_SLA_MATERIAL: return L("SLA material");
+    case Preset::TYPE_SLA_PRINT:    return L("print");
+    case Preset::TYPE_SLA_MATERIAL: return L("material");
     case Preset::TYPE_PRINTER:      return L("printer");
     default:                        return "invalid";
     }
@@ -1696,10 +1696,9 @@ std::string PresetCollection::path_from_name(const std::string &new_name) const
     return (boost::filesystem::path(m_dir_path) / file_name).make_preferred().string();
 }
 
-const Preset& PrinterPresetCollection::default_preset_for(const DynamicPrintConfig &config) const
+const Preset& PrinterPresetCollection::default_preset_for(const DynamicPrintConfig &) const
 {
-    const ConfigOptionEnumGeneric *opt_printer_technology = config.opt<ConfigOptionEnumGeneric>("printer_technology");
-    return this->default_preset((opt_printer_technology == nullptr || opt_printer_technology->value == ptFFF) ? 0 : 1);
+    return this->default_preset(0);
 }
 
 const Preset* PrinterPresetCollection::find_system_preset_by_model_and_variant(const std::string &model_id, const std::string& variant) const
