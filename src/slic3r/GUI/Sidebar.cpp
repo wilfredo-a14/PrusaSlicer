@@ -20,8 +20,12 @@
 #include "Sidebar.hpp"
 #include "FrequentlyChangedParameters.hpp"
 #include "Plater.hpp"
+#ifdef CLIP3D_NATIVE_AIRPRINT
+#include "DLPPrintPanel.hpp"
+#endif
 
 #include <cstddef>
+#include <cmath>
 #include <string>
 #include <boost/algorithm/string.hpp>
 
@@ -226,7 +230,7 @@ void SlicedInfo::SetTextAndShow(SlicedInfoIdx idx, const wxString& text, const w
 class PlaterPrintSettings
 {
 public:
-    explicit PlaterPrintSettings(wxWindow* parent)
+    explicit PlaterPrintSettings(wxWindow* parent, Plater* plater) : m_plater(plater)
     {
         PresetBundle* presets = wxGetApp().preset_bundle;
         sync_bed_shape();
@@ -235,7 +239,10 @@ public:
             parent, _L("Display size"), &presets->printers.get_edited_preset().config);
         m_display->append_single_option_line("display_width");
         m_display->append_single_option_line("display_height");
-        m_display->on_change = [](t_config_option_key, boost::any) {
+        m_display->append_single_option_line("display_grid_spacing");
+        m_display->on_change = [this](t_config_option_key opt_key, boost::any value) {
+            if (opt_key == "display_grid_spacing" && m_plater != nullptr)
+                m_plater->set_bed_grid_spacing(boost::any_cast<double>(value));
             apply_change(Preset::TYPE_PRINTER);
         };
         m_display->activate();
@@ -243,10 +250,27 @@ public:
         m_layers = std::make_shared<ConfigOptionsGroup>(
             parent, _L("Layer settings"), &presets->sla_prints.get_edited_preset().config);
         m_layers->append_single_option_line("layer_height");
-        m_layers->on_change = [](t_config_option_key, boost::any) {
+        m_layers->on_change = [this](t_config_option_key, boost::any) {
             apply_change(Preset::TYPE_SLA_PRINT);
+            update_slice_count();
         };
         m_layers->activate();
+
+        wxWindow* layer_parent = m_layers->ctrl_parent();
+        auto* slice_count_label = new wxStaticText(
+            layer_parent, wxID_ANY, _L("Number of slices") + ": ", wxDefaultPosition,
+            wxSize(m_layers->label_width * wxGetApp().em_unit(), -1));
+        slice_count_label->SetBackgroundStyle(wxBG_STYLE_PAINT);
+        slice_count_label->SetFont(wxGetApp().normal_font());
+
+        m_slice_count = new wxStaticText(layer_parent, wxID_ANY, _L("N/A"));
+        m_slice_count->SetBackgroundStyle(wxBG_STYLE_PAINT);
+        m_slice_count->SetFont(wxGetApp().normal_font());
+
+        auto* slice_count_sizer = new wxBoxSizer(wxHORIZONTAL);
+        slice_count_sizer->Add(m_slice_count, 0, wxALIGN_CENTER_VERTICAL);
+        m_layers->get_grid_sizer()->Add(slice_count_label, 0, wxALIGN_CENTER_VERTICAL);
+        m_layers->get_grid_sizer()->Add(slice_count_sizer, 0, wxEXPAND | wxBOTTOM | wxTOP, wxOSX ? 0 : 2);
 
         m_sizer = new wxBoxSizer(wxVERTICAL);
         m_sizer->Add(m_display->sizer, 0, wxEXPAND);
@@ -263,6 +287,33 @@ public:
         m_layers->set_config(&presets->sla_prints.get_edited_preset().config);
         m_display->reload_config();
         m_layers->reload_config();
+        update_slice_count();
+    }
+
+    void update_slice_count()
+    {
+        if (m_plater == nullptr)
+            return;
+
+        wxString value = _L("N/A");
+        const Selection& selection = m_plater->get_selection();
+        const double layer_height = wxGetApp().preset_bundle->sla_prints.get_edited_preset().config.opt_float("layer_height");
+
+        if (!selection.is_empty() && !selection.is_wipe_tower() && selection.get_object_idx() >= 0) {
+            const BoundingBoxf3& bounding_box = selection.get_bounding_box();
+            const double object_height = bounding_box.size().z();
+            if (bounding_box.defined && std::isfinite(object_height) && object_height >= 0.0 &&
+                std::isfinite(layer_height) && layer_height > 0.0) {
+                // Exported layers are rebased to the STL's bottom, so changing
+                // object Z does not add black padding images.
+                const auto slices = static_cast<unsigned long long>(
+                    std::floor(object_height / layer_height + 1e-9));
+                value = wxString::Format("%llu", slices);
+            }
+        }
+
+        m_slice_count->SetLabelText(value);
+        m_layers->sizer->Layout();
     }
 
     void msw_rescale()
@@ -299,12 +350,17 @@ private:
         DynamicPrintConfig& config = wxGetApp().preset_bundle->printers.get_edited_preset().config;
         const double width  = config.opt_float("display_width");
         const double length = config.opt_float("display_height");
+        const double half_width  = 0.5 * width;
+        const double half_length = 0.5 * length;
         config.set_key_value("bed_shape", new ConfigOptionPoints{
-            Vec2d(0, 0), Vec2d(width, 0), Vec2d(width, length), Vec2d(0, length)
+            Vec2d(-half_width, -half_length), Vec2d(half_width, -half_length),
+            Vec2d(half_width, half_length), Vec2d(-half_width, half_length)
         });
     }
 
     wxSizer* m_sizer { nullptr };
+    Plater* m_plater { nullptr };
+    wxStaticText* m_slice_count { nullptr };
     std::shared_ptr<ConfigOptionsGroup> m_display;
     std::shared_ptr<ConfigOptionsGroup> m_layers;
 };
@@ -510,7 +566,7 @@ Sidebar::Sidebar(Plater *parent)
     params_sizer->Add(m_object_manipulation->get_sizer(), 0, wxEXPAND | wxTOP, margin_5);
 
     // Core print dimensions belong next to the object being prepared.
-    m_plater_print_settings = std::make_unique<PlaterPrintSettings>(m_scrolled_panel);
+    m_plater_print_settings = std::make_unique<PlaterPrintSettings>(m_scrolled_panel, m_plater);
     params_sizer->Add(m_plater_print_settings->get_sizer(), 0, wxEXPAND | wxTOP, margin_5);
 
     // Frequently Object Settings
@@ -584,8 +640,8 @@ Sidebar::Sidebar(Plater *parent)
         wxGetApp().UpdateDarkUI((*btn), true);
     };
 
-    init_btn(&m_btn_export_gcode, _L("Export Print") + dots , scaled_height);
-    init_btn(&m_btn_reslice     , _L("Slice now")            , scaled_height);
+    init_btn(&m_btn_export_gcode, _L("Print"), scaled_height);
+    init_btn(&m_btn_reslice     , _L("Slice"), scaled_height);
     init_btn(&m_btn_connect_gcode, _L("Send to Connect"), scaled_height);
 
     enable_buttons(false);
@@ -635,12 +691,7 @@ Sidebar::Sidebar(Plater *parent)
     {
         if (m_plater->canvas3D()->get_gizmos_manager().is_in_editing_mode(true))
             return;
-
-        const bool export_gcode_after_slicing = wxGetKeyState(WXK_SHIFT);
-        if (export_gcode_after_slicing)
-            m_plater->export_gcode(true);
-        else
-            m_plater->reslice(true);
+        m_plater->reslice(true);
     });
 
 #ifdef _WIN32
@@ -867,8 +918,6 @@ void Sidebar::on_select_preset(wxCommandEvent& evt)
 void Sidebar::update_reslice_btn_tooltip()
 {
     wxString tooltip = wxString("Slice") + " [" + GUI::shortkey_ctrl_prefix() + "R]";
-    if (m_mode != comSimple)
-        tooltip += wxString("\n") + _L("Hold Shift to Slice & Export G-code");
 #ifdef _WIN32
     m_reslice_btn_tooltip = tooltip;
 #else
@@ -978,6 +1027,9 @@ void Sidebar::update_objects_list_extruder_column(size_t extruders_count)
 
 void Sidebar::show_info_sizer()
 {
+    if (m_plater_print_settings)
+        m_plater_print_settings->update_slice_count();
+
     Selection& selection = wxGetApp().plater()->canvas3D()->get_selection();
     ModelObjectPtrs objects = m_plater->model().objects;
     const int obj_idx = selection.get_object_idx();
@@ -1055,16 +1107,18 @@ void Sidebar::update_sliced_info_sizer()
         if (m_plater->printer_technology() == ptSLA)
         {
             const SLAPrintStatistics& ps = m_plater->active_sla_print().print_statistics();
+            const double used_material_ml =
+                (ps.objects_used_material + ps.support_used_material) / 1000.0;
             wxString new_label = _L("Used Material (ml)") + ":";
             const bool is_supports = ps.support_used_material > 0.0;
             if (is_supports)
                 new_label += format_wxstr("\n    - %s\n    - %s", _L_PLURAL("object", "objects", m_plater->model().objects.size()), _L("supports and pad"));
 
             wxString info_text = is_supports ?
-                wxString::Format("%.2f \n%.2f \n%.2f", (ps.objects_used_material + ps.support_used_material) / 1000,
+                wxString::Format("%.2f \n%.2f \n%.2f", used_material_ml,
                                                        ps.objects_used_material / 1000,
                                                        ps.support_used_material / 1000) :
-                wxString::Format("%.2f", (ps.objects_used_material + ps.support_used_material) / 1000);
+                wxString::Format("%.2f", used_material_ml);
             m_sliced_info->SetTextAndShow(siMaterial_unit, info_text, new_label);
 
             wxString str_total_cost = "N/A";
@@ -1075,15 +1129,21 @@ void Sidebar::update_sliced_info_sizer()
             {
                 double material_cost = cfg->option("bottle_cost")->getFloat() / 
                                        cfg->option("bottle_volume")->getFloat();
-                str_total_cost = wxString::Format("%.3f", material_cost*(ps.objects_used_material + ps.support_used_material) / 1000);                
+                str_total_cost = wxString::Format("%.3f", material_cost * used_material_ml);
             }
             m_sliced_info->SetTextAndShow(siCost, str_total_cost, "Cost");
 
             wxString t_est = "N/A";
-            if (! std::isnan(ps.estimated_print_time)) {
-                t_est = from_u8(short_time_ui(get_time_dhms(float(ps.estimated_print_time))));
-                if (ps.estimated_print_time_tolerance > 0.)
-                    t_est += from_u8(" \u00B1 ") + from_u8(short_time_ui(get_time_dhms(float(ps.estimated_print_time_tolerance))));
+            double estimated_print_time = ps.estimated_print_time;
+            double estimated_print_time_tolerance = ps.estimated_print_time_tolerance;
+#ifdef CLIP3D_NATIVE_AIRPRINT
+            estimated_print_time = estimate_native_dlp_print_seconds(m_plater->active_sla_print());
+            estimated_print_time_tolerance = 0.0;
+#endif
+            if (! std::isnan(estimated_print_time)) {
+                t_est = from_u8(short_time_ui(get_time_dhms(float(estimated_print_time))));
+                if (estimated_print_time_tolerance > 0.)
+                    t_est += from_u8(" \u00B1 ") + from_u8(short_time_ui(get_time_dhms(float(estimated_print_time_tolerance))));
             }
 
             m_sliced_info->SetTextAndShow(siEstimatedTime, t_est, _L("Estimated printing time") + ":");
@@ -1237,7 +1297,15 @@ void Sidebar::show_bulk_btns_sizer(const bool show)
 void Sidebar::enable_buttons(bool enable)
 {
     m_btn_reslice->Enable(enable);
-    m_btn_export_gcode->Enable(enable);
+    // Native DLP printing can open the print panel without a model and let the
+    // operator choose an existing layer-image directory there.
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    const bool sla_print = true;
+#else
+    const bool sla_print = wxGetApp().preset_bundle != nullptr &&
+        wxGetApp().preset_bundle->printers.get_edited_preset().printer_technology() == ptSLA;
+#endif
+    m_btn_export_gcode->Enable(enable || sla_print);
     m_btn_send_gcode->Enable(enable);
     m_btn_export_gcode_removable->Enable(enable);
     m_btn_connect_gcode->Enable(enable);

@@ -299,8 +299,12 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_S
 // So, redraw explicitly canvas, when application is moved
 //FIXME maybe this is useful for __WXGTK3__ as well?
 #if __APPLE__
-        wxGetApp().plater()->get_current_canvas3D()->set_as_dirty();
-        wxGetApp().plater()->get_current_canvas3D()->request_extra_frame();
+        if (Plater *plater = wxGetApp().plater(); plater != nullptr) {
+            if (GLCanvas3D *canvas = plater->get_current_canvas3D(); canvas != nullptr) {
+                canvas->set_as_dirty();
+                canvas->request_extra_frame();
+            }
+        }
 #endif
         wxGetApp().searcher().update_dialog_position();
         event.Skip();

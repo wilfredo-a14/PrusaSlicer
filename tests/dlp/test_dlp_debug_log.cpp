@@ -11,9 +11,13 @@ using namespace Slic3r::dlp;
 TEST_CASE("DLP debug log path points at logs/dlp_corkscrew.log", "[dlp][debug]")
 {
     const std::string path = debug_log_path();
+#ifdef SLIC3R_DLP_FILE_LOG
     REQUIRE_FALSE(path.empty());
     CHECK(path.find("dlp_corkscrew.log") != std::string::npos);
     CHECK(path.find("logs") != std::string::npos);
+#else
+    CHECK(path.empty());
+#endif
 }
 
 TEST_CASE("DLP debug log mirror stdout flag toggles", "[dlp][debug]")
@@ -31,6 +35,7 @@ TEST_CASE("DLP debug log mirror stdout flag toggles", "[dlp][debug]")
 
 TEST_CASE("DLP debug_log appends a timestamped line to the log file", "[dlp][debug]")
 {
+#ifdef SLIC3R_DLP_FILE_LOG
     namespace fs = std::filesystem;
 
     const fs::path path = debug_log_path();
@@ -53,10 +58,15 @@ TEST_CASE("DLP debug_log appends a timestamped line to the log file", "[dlp][deb
                          std::istreambuf_iterator<char>());
     CHECK(contents.find(marker) != std::string::npos);
     CHECK(contents.find('[') != std::string::npos);
+#else
+    CHECK(debug_log_path().empty());
+    CHECK_NOTHROW(debug_log("disabled-file-log-marker"));
+#endif
 }
 
 TEST_CASE("DLP print_debug_log_tail prints recent lines", "[dlp][debug]")
 {
+#ifdef SLIC3R_DLP_FILE_LOG
     namespace fs = std::filesystem;
     const fs::path path = debug_log_path();
     std::error_code ec;
@@ -73,4 +83,7 @@ TEST_CASE("DLP print_debug_log_tail prints recent lines", "[dlp][debug]")
 
     // Smoke: helper must not throw / crash.
     print_debug_log_tail(10);
+#else
+    CHECK_NOTHROW(print_debug_log_tail(10));
+#endif
 }

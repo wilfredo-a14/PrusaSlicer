@@ -963,6 +963,11 @@ void Selection::setup_cache()
 
 void Selection::translate(const Vec3d& displacement, TransformationType transformation_type)
 {
+    translate(displacement, transformation_type, true);
+}
+
+void Selection::translate(const Vec3d& displacement, TransformationType transformation_type, bool constrain_to_bed)
+{
     if (!m_valid)
         return;
 
@@ -1005,7 +1010,8 @@ void Selection::translate(const Vec3d& displacement, TransformationType transfor
         synchronize_unselected_volumes();
 #endif // !DISABLE_INSTANCES_SYNCH
 
-    ensure_not_below_bed();
+    if (constrain_to_bed)
+        ensure_not_below_bed();
     set_bounding_boxes_dirty();
     wxGetApp().plater()->canvas3D()->requires_check_outside_state();
 }

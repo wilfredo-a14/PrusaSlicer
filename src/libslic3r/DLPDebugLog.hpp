@@ -9,15 +9,16 @@
 
 namespace Slic3r::dlp {
 
-// Append a timestamped line to logs/dlp_corkscrew.log (gitignored).
+// Write a timestamped diagnostic line. Disk output is omitted when the build
+// disables SLIC3R_DLP_FILE_LOG, as release packages do.
 void debug_log(const std::string &message);
 
 // When enabled, debug_log() also writes to stdout.
-// Off by default so headless CLI stays quiet; details stay in the log file.
+// Off by default so headless CLI stays quiet.
 void set_debug_log_mirror_stdout(bool enable);
 bool debug_log_mirror_stdout();
 
-// Path to the DLP debug log file (relative to cwd unless absolute).
+// Path to the DLP debug log file, or an empty string when disk logging is off.
 std::string debug_log_path();
 
 // Print the last N lines of the DLP debug log to stdout (for CLI summaries).

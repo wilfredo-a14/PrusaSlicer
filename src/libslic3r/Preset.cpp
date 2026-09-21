@@ -701,7 +701,7 @@ static std::vector<std::string> s_Preset_sla_material_options_all = boost::copy_
 static std::vector<std::string> s_Preset_sla_printer_options {
     "printer_technology",
     "bed_shape", "bed_custom_texture", "bed_custom_model", "max_print_height",
-    "display_width", "display_height", "display_pixels_x", "display_pixels_y",
+    "display_width", "display_height", "display_grid_spacing", "display_pixels_x", "display_pixels_y",
     "display_mirror_x", "display_mirror_y",
     "display_orientation",
     DLP_SLA_PRINTER_PRESET_OPTION_ENTRIES

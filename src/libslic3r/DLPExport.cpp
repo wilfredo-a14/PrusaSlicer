@@ -19,11 +19,48 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <stdexcept>
 #include <vector>
 
 #include "format.hpp"
 
 namespace Slic3r::dlp {
+
+namespace fs = std::filesystem;
+
+bool export_directory_has_contents(const std::string &directory)
+{
+    std::error_code ec;
+    const fs::path path(directory);
+    if (directory.empty() || !fs::is_directory(path, ec))
+        return false;
+
+    const auto it = fs::directory_iterator(path, ec);
+    return !ec && it != fs::directory_iterator();
+}
+
+std::string clear_export_directory(const std::string &directory)
+{
+    std::error_code ec;
+    const fs::path path(directory);
+    if (directory.empty() || !fs::is_directory(path, ec) || ec)
+        return "Export folder is not a directory: " + directory;
+
+    std::vector<fs::path> entries;
+    fs::directory_iterator it(path, ec);
+    if (ec)
+        return "Could not list export folder: " + ec.message();
+    for (const fs::directory_iterator end; it != end; ++it)
+        entries.push_back(it->path());
+
+    for (const fs::path &entry : entries) {
+        ec.clear();
+        fs::remove_all(entry, ec);
+        if (ec)
+            return "Could not delete " + entry.string() + ": " + ec.message();
+    }
+    return {};
+}
 
 void export_png_layers(SLAPrint &print,
                        const ExecutionTBB &ex_tbb,
@@ -49,9 +86,14 @@ void export_png_layers(SLAPrint &print,
     BOOST_LOG_TRIVIAL(debug) << "SLA rasterize: PNG export requested to "
         << print.png_export_dir();
     try {
-        namespace fs = std::filesystem;
         fs::path output_dir = print.png_export_dir();
         fs::create_directories(output_dir);
+        const std::string clear_error = clear_export_directory(output_dir.string());
+        if (!clear_error.empty()) {
+            debug_log(Slic3r::format("PNG export: failed to clear directory — %1%", clear_error));
+            throw std::runtime_error(clear_error);
+        }
+        debug_log(Slic3r::format("PNG export: cleared existing files in %1%", output_dir.string()));
 
         const auto &pcfg = print.printer_config();
         double disp_w = pcfg.display_width.getFloat();   // mm

@@ -4289,6 +4289,13 @@ void PrintConfigDef::init_sla_params()
     def->min = 1;
     def->set_default_value(new ConfigOptionFloat(Slic3r::dlp::DISPLAY_HEIGHT_MM));
 
+    def = this->add("display_grid_spacing", coFloat);
+    def->label = L("Grid spacing");
+    def->tooltip = L("Distance between grid lines on the display plane");
+    def->sidetext = L("mm");
+    def->min = 0.01;
+    def->set_default_value(new ConfigOptionFloat(5.0));
+
     def = this->add("display_pixels_x", coInt);
     def->full_label = L("Number of pixels in");
     def->label = ("X");

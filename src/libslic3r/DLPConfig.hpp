@@ -10,7 +10,7 @@ namespace Slic3r::dlp {
 // Default DLP display resolution (hard-coded project default).
 constexpr int    DISPLAY_PIXELS_X  = 2560;
 constexpr int    DISPLAY_PIXELS_Y  = 1600;
-constexpr double DISPLAY_WIDTH_MM  = 120.0;
+constexpr double DISPLAY_WIDTH_MM  = 80.0;
 constexpr double DISPLAY_HEIGHT_MM = DISPLAY_WIDTH_MM * DISPLAY_PIXELS_Y / DISPLAY_PIXELS_X;
 
 } // namespace Slic3r::dlp

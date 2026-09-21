@@ -42,6 +42,7 @@ option(SLIC3R_ASAN              "Enable ASan on Clang and GCC" 0)
 option(SLIC3R_UBSAN             "Enable UBSan on Clang and GCC" 0)
 option(SLIC3R_ENABLE_FORMAT_STEP "Enable compilation of STEP file support" ON)
 option(SLIC3R_LOG_TO_FILE       "Enable logging into file")
+option(SLIC3R_DLP_FILE_LOG      "Write DLP diagnostic logs to disk" ON)
 option(SLIC3R_REPO_URL          "Preset repo URL")
 
 # SLIC3R_OPENGL_ES can be enabled only if SLIC3R_GUI is enabled.

@@ -220,7 +220,7 @@ void PrintConfigDef::init_dlp_params()
     add_dlp_float(*this, "dlp_stage_acceleration", "Stage acceleration", 5., 0., 10., "mm/s²");
     add_dlp_float(*this, "dlp_jerk_time", "Jerk time", 40., 0., 99.99, "ms");
     add_dlp_float(*this, "dlp_end_position_min", "Minimum end position", 0., -5., 65., "mm");
-    add_dlp_float(*this, "dlp_end_position_max", "Maximum end position", 60., -5., 65., "mm");
+    add_dlp_float(*this, "dlp_end_position_max", "Maximum end position", 64.3, -5., 1000., "mm");
     add_dlp_bool(*this, "dlp_stage_pumping", "Enable stage pumping", false);
     add_dlp_float(*this, "dlp_pumping_depth", "Pumping depth", 0., 0., 5000., "µm");
 
@@ -253,7 +253,7 @@ void PrintConfigDef::init_dlp_params()
 
     // DLP material preset: exposure and delivery values which vary with resin.
     add_dlp_float(*this, "dlp_initial_exposure_delay", "Initial exposure delay", 0., 0., 99., "s");
-    add_dlp_int(*this, "dlp_initial_exposure_intensity", "Initial exposure intensity", 10, 0, 255);
+    add_dlp_int(*this, "dlp_initial_exposure_intensity", "First-layer UV intensity", 10, 0, 255);
     add_dlp_int(*this, "dlp_uv_intensity", "UV intensity", 12, 0, 255);
     add_dlp_float(*this, "dlp_dark_time", "Dark time", 1., 0., 100000000., "ms");
     add_dlp_float(*this, "dlp_post_exposure_delay", "Post-exposure delay", 0., 0., 10000., "ms");

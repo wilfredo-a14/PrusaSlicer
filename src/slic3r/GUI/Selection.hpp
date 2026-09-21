@@ -305,6 +305,7 @@ public:
     void setup_cache();
 
     void translate(const Vec3d& displacement, TransformationType transformation_type);
+    void translate(const Vec3d& displacement, TransformationType transformation_type, bool constrain_to_bed);
     void rotate(const Vec3d& rotation, TransformationType transformation_type);
     void flattening_rotate(const Vec3d& normal);
     void scale(const Vec3d& scale, TransformationType transformation_type);

@@ -498,3 +498,45 @@ endif ()
 
 # Add a definition so that we can tell we are compiling slic3r.
 target_compile_definitions(libslic3r_gui PRIVATE SLIC3R_CURRENTLY_COMPILING_GUI_MODULE)
+
+# Native AirPrint panel (POSIX serial + HID). Settings defaults are generated
+# from printer/config.py; Confirm print overlays the saved runtime file.
+if (UNIX)
+    if (DEFINED ENV{CLIP3D_PRINTER_DIR} AND EXISTS "$ENV{CLIP3D_PRINTER_DIR}/cpp-prototype/PrinterCore.cpp")
+        set(CLIP3D_PRINTER_DIR "$ENV{CLIP3D_PRINTER_DIR}")
+    else()
+        get_filename_component(CLIP3D_PRINTER_DIR "${CMAKE_SOURCE_DIR}/../../printer" ABSOLUTE)
+    endif()
+    if (EXISTS "${CLIP3D_PRINTER_DIR}/cpp-prototype/PrinterCore.cpp")
+        find_program(CLIP3D_PYTHON3 NAMES python3 python)
+        set(AIRPRINT_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_airprint")
+        file(MAKE_DIRECTORY "${AIRPRINT_GENERATED_DIR}")
+        if (NOT CLIP3D_PYTHON3)
+            message(FATAL_ERROR "python3 is required to generate AirPrint defaults from ${CLIP3D_PRINTER_DIR}/config.py")
+        endif()
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${CLIP3D_PRINTER_DIR}/config.py"
+            "${CLIP3D_PRINTER_DIR}/smc100cc.py"
+            "${CLIP3D_PRINTER_DIR}/cpp-prototype/GenerateConfig.py")
+        execute_process(
+            COMMAND "${CLIP3D_PYTHON3}" "${CLIP3D_PRINTER_DIR}/cpp-prototype/GenerateConfig.py"
+                    --printer-dir "${CLIP3D_PRINTER_DIR}"
+                    --output "${AIRPRINT_GENERATED_DIR}/PrototypeConfig.hpp"
+            RESULT_VARIABLE AIRPRINT_CONFIG_RESULT
+            ERROR_VARIABLE AIRPRINT_CONFIG_ERROR)
+        if (NOT AIRPRINT_CONFIG_RESULT EQUAL 0)
+            message(FATAL_ERROR "Could not generate AirPrint defaults: ${AIRPRINT_CONFIG_ERROR}")
+        endif()
+        target_sources(libslic3r_gui PRIVATE
+            "${CLIP3D_PRINTER_DIR}/cpp-prototype/PrinterCore.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/GUI/DLPPrintPanel.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/GUI/DLPPrintPanel.hpp")
+        target_include_directories(libslic3r_gui PRIVATE
+            "${CLIP3D_PRINTER_DIR}/cpp-prototype"
+            "${AIRPRINT_GENERATED_DIR}")
+        set_source_files_properties(
+            "${CLIP3D_PRINTER_DIR}/cpp-prototype/PrinterCore.cpp"
+            PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+        target_compile_definitions(libslic3r_gui PRIVATE CLIP3D_NATIVE_AIRPRINT=1)
+    endif()
+endif()

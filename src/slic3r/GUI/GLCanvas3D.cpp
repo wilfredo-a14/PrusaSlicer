@@ -4302,6 +4302,11 @@ void GLCanvas3D::set_tooltip(const std::string& tooltip)
 
 void GLCanvas3D::do_move(const std::string& snapshot_type)
 {
+    do_move(snapshot_type, true);
+}
+
+void GLCanvas3D::do_move(const std::string& snapshot_type, bool ensure_on_bed)
+{
     if (m_model == nullptr)
         return;
 
@@ -4357,7 +4362,7 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
     for (const std::pair<int, int>& i : done) {
         ModelObject* m = m_model->objects[i.first];
         const double shift_z = m->get_instance_min_z(i.second);
-        if (current_printer_technology() == ptSLA || shift_z > SINKING_Z_THRESHOLD) {
+        if (ensure_on_bed && (current_printer_technology() == ptSLA || shift_z > SINKING_Z_THRESHOLD)) {
             const Vec3d shift(0.0, 0.0, -shift_z);
             m_selection.translate(i.first, i.second, shift);
             m->translate_instance(i.second, shift);

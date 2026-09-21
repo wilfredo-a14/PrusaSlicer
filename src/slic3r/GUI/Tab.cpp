@@ -2871,6 +2871,9 @@ void TabPrinter::build_sla()
     optgroup->append_single_option_line("max_print_height");
 
     optgroup = page->new_optgroup(L("Display"));
+    optgroup->append_single_option_line("display_width");
+    optgroup->append_single_option_line("display_height");
+    optgroup->append_single_option_line("display_grid_spacing");
     auto option = optgroup->get_option("display_pixels_x");
     Line line = { option.opt.full_label, "" };
     line.append_option(option);
@@ -3836,6 +3839,13 @@ void TabPrinter::update_fff()
 
 void TabPrinter::update_sla()
 {
+    const double half_width  = 0.5 * m_config->opt_float("display_width");
+    const double half_length = 0.5 * m_config->opt_float("display_height");
+    m_config->set_key_value("bed_shape", new ConfigOptionPoints{
+        Vec2d(-half_width, -half_length), Vec2d(half_width, -half_length),
+        Vec2d(half_width, half_length), Vec2d(-half_width, half_length)
+    });
+
     const auto page_it = std::find_if(m_pages.begin(), m_pages.end(), [](const PageShp &page) {
         return page->title() == L("Manual Control");
     });

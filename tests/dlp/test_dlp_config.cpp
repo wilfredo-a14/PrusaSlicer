@@ -17,9 +17,9 @@ TEST_CASE("DLP display defaults are hard-coded 2560x1600", "[dlp][config]")
 {
     CHECK(DISPLAY_PIXELS_X == 2560);
     CHECK(DISPLAY_PIXELS_Y == 1600);
-    CHECK(DISPLAY_WIDTH_MM == Approx(120.0));
-    CHECK(DISPLAY_HEIGHT_MM == Approx(120.0 * 1600.0 / 2560.0));
-    CHECK(DISPLAY_HEIGHT_MM == Approx(75.0));
+    CHECK(DISPLAY_WIDTH_MM == Approx(80.0));
+    CHECK(DISPLAY_HEIGHT_MM == Approx(80.0 * 1600.0 / 2560.0));
+    CHECK(DISPLAY_HEIGHT_MM == Approx(50.0));
 }
 
 TEST_CASE("DLP display aspect ratio matches pixel aspect ratio", "[dlp][config]")
@@ -36,6 +36,7 @@ TEST_CASE("SLA printer config defaults use DLP display resolution", "[dlp][confi
     CHECK(cfg.display_pixels_y.getInt() == DISPLAY_PIXELS_Y);
     CHECK(cfg.display_width.getFloat() == Approx(DISPLAY_WIDTH_MM));
     CHECK(cfg.display_height.getFloat() == Approx(DISPLAY_HEIGHT_MM));
+    CHECK(cfg.display_grid_spacing.getFloat() == Approx(5.0));
 }
 
 TEST_CASE("Corkscrew options exist on SLA print object config", "[dlp][config][corkscrew]")
@@ -66,8 +67,10 @@ TEST_CASE("Legacy DLP settings are backed by native SLA preset configs", "[dlp][
 {
     SLAPrintObjectConfig print;
     REQUIRE(print.has("dlp_stage_velocity"));
+    REQUIRE(print.has("dlp_end_position_max"));
     REQUIRE(print.has("dlp_dynamic_print_script"));
     CHECK(print.dlp_stage_velocity.getFloat() == Approx(10.));
+    CHECK(print.dlp_end_position_max.getFloat() == Approx(64.));
     CHECK_FALSE(print.dlp_dynamic_print_script.getBool());
 
     SLAMaterialConfig material;
@@ -88,6 +91,10 @@ TEST_CASE("Legacy DLP settings are backed by native SLA preset configs", "[dlp][
     REQUIRE(motion_mode != nullptr);
     CHECK(motion_mode->type == coString);
     CHECK(motion_mode->gui_type == ConfigOptionDef::GUIType::select_close);
+
+    const ConfigOptionDef *maximum_height = print_config_def.get("dlp_end_position_max");
+    REQUIRE(maximum_height != nullptr);
+    CHECK(maximum_height->max == Approx(64.));
 }
 
 TEST_CASE("Corkscrew box count can be set within allowed range", "[dlp][config][corkscrew]")

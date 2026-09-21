@@ -3,12 +3,17 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "DLPPlater.hpp"
+#include "DLPPrintPanel.hpp"
 
 #include "GUI.hpp"
 #include "GUI_App.hpp"
 #include "I18N.hpp"
+#include "MsgDialog.hpp"
+#include "Plater.hpp"
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/DLPAirPrintLaunch.hpp"
 #include "libslic3r/DLPDebugLog.hpp"
+#include "libslic3r/DLPExport.hpp"
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "slic3r/Utils/Serial.hpp"
@@ -21,20 +26,31 @@
 #include <wx/scrolwin.h>
 #include <wx/sizer.h>
 #include <wx/spinctrl.h>
+#include <wx/stdpaths.h>
 #include <wx/statbox.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/utils.h>
 
+#include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
+#ifdef __APPLE__
+#include <boost/process/spawn.hpp>
+#include <boost/process/start_dir.hpp>
+#endif
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <map>
 #include <regex>
 #include <sstream>
+#include <vector>
 
 #include "libslic3r/format.hpp"
 
@@ -43,6 +59,46 @@ namespace Slic3r { namespace GUI {
 namespace {
 
 using PrinterConfig = std::map<std::string, std::string>;
+
+boost::filesystem::path printer_config_directory()
+{
+    // Launchers provide the source-of-truth directory explicitly. This also
+    // supports an app bundle copied outside the repository.
+    if (const char *configured = std::getenv("CLIP3D_PRINTER_DIR"); configured != nullptr && *configured != '\0') {
+        const boost::filesystem::path directory(configured);
+        boost::system::error_code error;
+        if (boost::filesystem::is_regular_file(directory / "config.py", error))
+            return directory;
+    }
+
+    // Keep direct build-tree launches working regardless of their current
+    // directory by walking upward from both the process cwd and executable.
+    std::vector<boost::filesystem::path> search_roots;
+    boost::system::error_code error;
+    const boost::filesystem::path cwd = boost::filesystem::current_path(error);
+    if (!error)
+        search_roots.emplace_back(cwd);
+
+    const boost::filesystem::path executable = into_path(wxStandardPaths::Get().GetExecutablePath());
+    if (!executable.empty())
+        search_roots.emplace_back(executable.parent_path());
+
+    for (boost::filesystem::path root : search_roots) {
+        while (!root.empty()) {
+            const boost::filesystem::path directory = root / "printer";
+            error.clear();
+            if (boost::filesystem::is_regular_file(directory / "config.py", error))
+                return directory;
+
+            const boost::filesystem::path parent = root.parent_path();
+            if (parent == root)
+                break;
+            root = parent;
+        }
+    }
+
+    return {};
+}
 
 std::string trim(std::string value)
 {
@@ -92,8 +148,8 @@ PrinterConfig load_printer_config()
         { "STAGE_BAUD_RATE", "57600" },
         { "STAGE_XON_XOFF", "Yes" },
         { "HOME_POSITION_MM", "0.0" },
-        { "STAGE_MAX_HEIGHT_MM", "59.0" },
-        { "START_POSITION_MM", "58.2" },
+        { "STAGE_MAX_HEIGHT_MM", "64.3" },
+        { "DEADZONE_THICKNESS_MM", "0.0" },
         { "LAYER_HEIGHT_MM", "6" },
         { "MOVE_DIRECTION", "-1" },
         { "STAGE_MAX_VELOCITY_MM_S", "10.0" },
@@ -104,12 +160,15 @@ PrinterConfig load_printer_config()
         { "STAGE_MAX_CORRECTION_MM", "0.050" },
         { "PUMPING_ENABLED", "Yes" },
         { "PUMP_HEIGHT_MM", "0.6" },
+        { "PUMP_ACCELERATION_MM_S2", "5.0" },
         { "DEBUG_STAGE_POSITION", "Yes" },
+        { "DARK_TIME_SECONDS", "2.0" },
         { "EXPOSURE_SECONDS", "2.0" },
         { "INITIAL_EXPOSURE_SECONDS", "Auto" },
     };
 
-    std::ifstream input("printer/config.py");
+    const boost::filesystem::path config_directory = printer_config_directory();
+    std::ifstream input((config_directory / "config.py").string());
     if (!input)
         return config;
 
@@ -122,7 +181,7 @@ PrinterConfig load_printer_config()
             config[match[1].str()] = display_value(match[2].str());
     }
 
-    std::ifstream serial_input("printer/smc100cc.py");
+    std::ifstream serial_input((config_directory / "smc100cc.py").string());
     const std::regex serial_assignment(R"REGEX(^\s*"(baudrate|xonxoff)"\s*:\s*([^,#]+).*$)REGEX");
     while (std::getline(serial_input, line)) {
         if (!std::regex_match(line, match, serial_assignment))
@@ -290,10 +349,16 @@ wxString connection_error(const ConnectionStatus &connections, const SLAPrinterC
 
 bool save_printer_config(const PrinterConfig &updates, std::string &error)
 {
-    const std::string path = "printer/config.py";
-    std::ifstream input(path);
+    const boost::filesystem::path config_directory = printer_config_directory();
+    if (config_directory.empty()) {
+        error = "Could not locate printer/config.py. Start PrusaSlicer with this repository's launcher for your operating system.";
+        return false;
+    }
+
+    const boost::filesystem::path path = config_directory / "config.py";
+    std::ifstream input(path.string());
     if (!input) {
-        error = "Could not open " + path + ". Start the application with linux/run so the printer configuration can be located.";
+        error = "Could not open " + path.string() + ".";
         return false;
     }
 
@@ -313,22 +378,22 @@ bool save_printer_config(const PrinterConfig &updates, std::string &error)
     }
     input.close();
 
-    const std::string temporary_path = path + ".tmp";
-    std::ofstream output(temporary_path, std::ios::trunc);
+    const boost::filesystem::path temporary_path = path.string() + ".tmp";
+    std::ofstream output(temporary_path.string(), std::ios::trunc);
     if (!output) {
-        error = "Could not create " + temporary_path + ".";
+        error = "Could not create " + temporary_path.string() + ".";
         return false;
     }
     output << contents.str();
     output.close();
     if (!output) {
-        std::remove(temporary_path.c_str());
-        error = "Could not finish writing " + temporary_path + ".";
+        std::remove(temporary_path.string().c_str());
+        error = "Could not finish writing " + temporary_path.string() + ".";
         return false;
     }
-    if (std::rename(temporary_path.c_str(), path.c_str()) != 0) {
-        std::remove(temporary_path.c_str());
-        error = "Could not replace " + path + " with the selected print settings.";
+    if (std::rename(temporary_path.string().c_str(), path.string().c_str()) != 0) {
+        std::remove(temporary_path.string().c_str());
+        error = "Could not replace " + path.string() + " with the selected print settings.";
         return false;
     }
     return true;
@@ -398,7 +463,7 @@ private:
     wxBoxSizer *m_sizer;
 };
 
-bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
+[[maybe_unused]] bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
 {
     const wxString output_directory = from_u8(sla_print.png_export_dir());
     const PrinterConfig config = load_printer_config();
@@ -476,15 +541,19 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
     auto *travel_group = motion->add_group(_L("Layer motion"));
     motion->add_readonly(travel_group, _L("Layer height"),
                          wxString::Format("%.6g", sliced_layer_height), _L("mm · from slices"));
+    auto *printer_height = motion->add_number(travel_group, _L("Printer height / maximum"),
+                                               number_value(config, "STAGE_MAX_HEIGHT_MM", 64.3),
+                                               0.5, 1000.0, 0.1, 3, _L("mm"));
+    auto *deadzone = motion->add_number(travel_group, _L("Deadzone thickness"),
+                                        number_value(config, "DEADZONE_THICKNESS_MM", 0.0),
+                                        0.0, 0.5, 0.01, 3, _L("mm"));
+    auto *start_position = motion->add_readonly(
+        travel_group, _L("Start height (automatic)"),
+        wxString::Format("%.3f", printer_height->GetValue() - deadzone->GetValue()), _L("mm"));
     auto *return_position = motion->add_number(travel_group, _L("Return position"),
                                                 number_value(config, "HOME_POSITION_MM", 0.0),
-                                                0.0, number_value(config, "STAGE_MAX_HEIGHT_MM", 59.0),
+                                                0.0, printer_height->GetValue(),
                                                 0.1, 3, _L("mm"));
-    motion->add_readonly(travel_group, _L("Maximum stage height"), value_with_unit(config, "STAGE_MAX_HEIGHT_MM"), _L("mm"));
-    auto *start_position = motion->add_number(travel_group, _L("Start position"),
-                                               number_value(config, "START_POSITION_MM", 58.2),
-                                               0.0, number_value(config, "STAGE_MAX_HEIGHT_MM", 59.0),
-                                               0.1, 3, _L("mm"));
     auto *velocity = motion->add_number(travel_group, _L("Maximum velocity"),
                                         number_value(config, "STAGE_MAX_VELOCITY_MM_S", 10.0),
                                         0.01, 100.0, 0.1, 2, _L("mm/s"));
@@ -501,12 +570,30 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
     auto *pump_height = motion->add_number(pumping_group, _L("Pump height"),
                                            number_value(config, "PUMP_HEIGHT_MM", 0.6),
                                            sliced_layer_height + 0.001,
-                                           number_value(config, "STAGE_MAX_HEIGHT_MM", 59.0),
+                                           printer_height->GetValue(),
                                            0.1, 3, _L("mm"));
-    const auto update_pumping_controls = [pumping, pump_height](wxCommandEvent &) {
+    auto *pump_acceleration = motion->add_number(
+        pumping_group, _L("Pump acceleration"),
+        number_value(config, "PUMP_ACCELERATION_MM_S2", 5.0),
+        0.01, 100.0, 0.1, 3, _L("mm/s²"));
+    const auto update_height_controls = [printer_height, deadzone, start_position,
+                                         return_position, pump_height,
+                                         sliced_layer_height](wxCommandEvent &) {
+        const double maximum = printer_height->GetValue();
+        start_position->SetLabel(wxString::Format("%.3f", maximum - deadzone->GetValue()));
+        return_position->SetRange(0.0, maximum);
+        pump_height->SetRange(sliced_layer_height + 0.001, maximum);
+    };
+    printer_height->Bind(wxEVT_SPINCTRLDOUBLE, update_height_controls);
+    printer_height->Bind(wxEVT_TEXT, update_height_controls);
+    deadzone->Bind(wxEVT_SPINCTRLDOUBLE, update_height_controls);
+    deadzone->Bind(wxEVT_TEXT, update_height_controls);
+    const auto update_pumping_controls = [pumping, pump_height, pump_acceleration](wxCommandEvent &) {
         pump_height->Enable(pumping->GetValue());
+        pump_acceleration->Enable(pumping->GetValue());
     };
     pump_height->Enable(pumping->GetValue());
+    pump_acceleration->Enable(pumping->GetValue());
     pumping->Bind(wxEVT_CHECKBOX, update_pumping_controls);
     notebook->AddPage(motion, _L("Motion"));
 
@@ -515,10 +602,13 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
     auto *standard_exposure = exposure->add_number(exposure_group, _L("Standard exposure"),
                                                     number_value(config, "EXPOSURE_SECONDS", 2.0),
                                                     0.01, 3600.0, 0.1, 2, _L("s"));
-    wxString initial_exposure = value_with_unit(config, "INITIAL_EXPOSURE_SECONDS");
-    if (initial_exposure == _L("Auto"))
-        initial_exposure = _L("Same as standard exposure");
-    exposure->add_readonly(exposure_group, _L("Initial exposure"), initial_exposure);
+    auto *initial_exposure = exposure->add_number(exposure_group, _L("Initial exposure"),
+                                                   number_value(config, "INITIAL_EXPOSURE_SECONDS",
+                                                                standard_exposure->GetValue()),
+                                                   0.0, 3600.0, 0.1, 3, _L("s"));
+    auto *dark_time = exposure->add_number(exposure_group, _L("Dark time"),
+                                            number_value(config, "DARK_TIME_SECONDS", 2.0),
+                                            0.0, 3600.0, 0.001, 3, _L("s"));
     auto *diagnostics_group = exposure->add_group(_L("Diagnostics"));
     auto *position_logging = exposure->add_checkbox(diagnostics_group, _L("Stage position logging"),
                                                      bool_value(config, "DEBUG_STAGE_POSITION", true));
@@ -530,7 +620,29 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
         confirm->SetLabel(_L("Confirm print"));
         confirm->SetDefault();
         confirm->Bind(wxEVT_BUTTON, [&dialog, &config, &printer_config, &detected_connections,
-                                     light_engine_status, stage_port, stage_status](wxCommandEvent &) {
+                                     light_engine_status, stage_port, stage_status, pumping,
+                                     pump_height, pump_acceleration, velocity, settle_time,
+                                     dark_time, sliced_layer_height](wxCommandEvent &) {
+            if (pumping->GetValue()) {
+                const auto move_seconds = [velocity, pump_acceleration](double distance) {
+                    const double maximum_velocity = velocity->GetValue();
+                    const double acceleration = pump_acceleration->GetValue();
+                    const double acceleration_distance = maximum_velocity * maximum_velocity / acceleration;
+                    if (distance >= acceleration_distance)
+                        return 2.0 * maximum_velocity / acceleration +
+                            (distance - acceleration_distance) / maximum_velocity;
+                    return 2.0 * std::sqrt(distance / acceleration);
+                };
+                const double minimum_dark = move_seconds(pump_height->GetValue()) +
+                    move_seconds(pump_height->GetValue() - sliced_layer_height) +
+                    settle_time->GetValue();
+                if (dark_time->GetValue() + 1e-9 < minimum_dark) {
+                    show_error(&dialog, wxString::Format(
+                        _L("Dark time must be at least %.6f seconds for the configured pumping motion."),
+                        minimum_dark));
+                    return;
+                }
+            }
             detected_connections = detect_connections(config, printer_config);
             light_engine_status->SetLabel(detected_connections.light_engine_connected
                 ? _L("Detected — ") + from_u8(detected_connections.light_engine_description)
@@ -564,13 +676,17 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
         { "DLPC900_FLIP_SHORT_AXIS", flip_short->GetValue() ? "True" : "False" },
         { "STAGE_PORT", python_string(detected_connections.stage_port) },
         { "HOME_POSITION_MM", python_number(return_position->GetValue()) },
-        { "START_POSITION_MM", python_number(start_position->GetValue()) },
+        { "STAGE_MAX_HEIGHT_MM", python_number(printer_height->GetValue()) },
+        { "DEADZONE_THICKNESS_MM", python_number(deadzone->GetValue()) },
         { "STAGE_MAX_VELOCITY_MM_S", python_number(velocity->GetValue()) },
         { "STAGE_ACCELERATION_MM_S2", python_number(acceleration->GetValue()) },
         { "SETTLE_SECONDS", python_number(settle_time->GetValue()) },
         { "PUMPING_ENABLED", pumping->GetValue() ? "True" : "False" },
         { "PUMP_HEIGHT_MM", python_number(pump_height->GetValue()) },
+        { "PUMP_ACCELERATION_MM_S2", python_number(pump_acceleration->GetValue()) },
+        { "DARK_TIME_SECONDS", python_number(dark_time->GetValue()) },
         { "EXPOSURE_SECONDS", python_number(standard_exposure->GetValue()) },
+        { "INITIAL_EXPOSURE_SECONDS", python_number(initial_exposure->GetValue()) },
         { "DEBUG_STAGE_POSITION", position_logging->GetValue() ? "True" : "False" },
     };
     std::string save_error;
@@ -578,6 +694,73 @@ bool show_print_confirmation(wxWindow *parent, const SLAPrint &sla_print)
         show_error(parent, from_u8(save_error));
         return false;
     }
+    return true;
+}
+
+[[maybe_unused]] bool start_airprint(const std::string &image_directory, std::string &error, std::string &log_path)
+{
+    const boost::filesystem::path printer_dir = printer_config_directory();
+    if (printer_dir.empty()) {
+        error = "Could not locate printer/airprint.py. Start PrusaSlicer with this repository's launcher for your operating system.";
+        return false;
+    }
+
+    const boost::filesystem::path log_dir = printer_dir.parent_path() / "logs";
+    const dlp::AirPrintCommand command = dlp::plan_airprint_command(
+        printer_dir.string(), image_directory, log_dir.string());
+    if (!command.error.empty()) {
+        error = command.error;
+        return false;
+    }
+
+    boost::system::error_code ec;
+    boost::filesystem::create_directories(log_dir, ec);
+
+#ifdef __APPLE__
+    try {
+        boost::process::spawn(command.python_executable, command.arguments,
+                              boost::process::start_dir = command.working_directory);
+    } catch (const std::exception &ex) {
+        error = std::string("Failed to start AirPrint: ") + ex.what();
+        return false;
+    }
+#else
+    wxExecuteEnv env;
+    env.cwd = from_u8(command.working_directory);
+    std::vector<wxString> storage;
+    storage.reserve(command.arguments.size() + 1);
+    storage.emplace_back(from_u8(command.python_executable));
+    for (const std::string &arg : command.arguments)
+        storage.emplace_back(from_u8(arg));
+#ifdef _WIN32
+    std::vector<const wchar_t *> argv;
+    argv.reserve(storage.size() + 1);
+    for (const wxString &value : storage)
+        argv.emplace_back(value.wc_str());
+    argv.emplace_back(nullptr);
+    if (wxExecute(const_cast<wchar_t **>(argv.data()), wxEXEC_ASYNC | wxEXEC_MAKE_GROUP_LEADER, nullptr, &env) <= 0) {
+#else
+    std::vector<std::string> utf8;
+    utf8.reserve(storage.size());
+    std::vector<const char *> argv;
+    argv.reserve(storage.size() + 1);
+    for (const wxString &value : storage) {
+        utf8.emplace_back(into_u8(value));
+        argv.emplace_back(utf8.back().c_str());
+    }
+    argv.emplace_back(nullptr);
+    if (wxExecute(const_cast<char **>(argv.data()), wxEXEC_ASYNC | wxEXEC_MAKE_GROUP_LEADER, nullptr, &env) <= 0) {
+#endif
+        error = "Failed to start AirPrint.";
+        return false;
+    }
+#endif
+
+    log_path = command.log_path;
+    dlp::debug_log(Slic3r::format("GUI DLP print: started AirPrint image_dir=%1% log=%2%",
+                                  image_directory, command.log_path));
+    BOOST_LOG_TRIVIAL(info) << "DLP print: started AirPrint for " << image_directory
+                           << " (log " << command.log_path << ")";
     return true;
 }
 
@@ -603,11 +786,29 @@ bool prepare_dlp_print(wxWindow *parent, SLAPrint &sla_print)
 
     const wxString selected_directory = dlg.GetPath();
     const std::string path = into_u8(selected_directory);
+    if (dlp::export_directory_has_contents(path)) {
+        MessageDialog overwrite(parent,
+            _L("This folder is not empty. All files and subfolders in it will be deleted and replaced with new layer images.")
+                + "\n\n" + selected_directory + "\n\n"
+                + _L("Do you want to overwrite this folder?"),
+            _L("Overwrite export folder?"),
+            wxYES_NO | wxNO_DEFAULT | wxICON_WARNING);
+        if (overwrite.ShowModal() != wxID_YES) {
+            sla_print.set_png_export_dir("");
+            dlp::debug_log("GUI PNG export: overwrite cancelled — export disabled");
+            BOOST_LOG_TRIVIAL(debug) << "DLP print: overwrite of PNG export directory cancelled";
+            return false;
+        }
+        dlp::debug_log(Slic3r::format("GUI PNG export: overwrite confirmed path=%1%", path));
+    }
+
     dlp::debug_log(Slic3r::format("GUI PNG export: directory accepted path=%1%", path));
 
     wxGetApp().app_config->set("dlp_last_slice_directory", path);
     wxGetApp().app_config->save();
     sla_print.set_png_export_dir(path);
+    remember_native_dlp_sliced_layer_height(
+        sla_print.default_object_config().layer_height.value);
     dlp::debug_log("GUI DLP print: export directory selected; starting slice and PNG export");
     BOOST_LOG_TRIVIAL(info) << "DLP print: PNG export directory set to " << path;
     return true;
@@ -615,12 +816,29 @@ bool prepare_dlp_print(wxWindow *parent, SLAPrint &sla_print)
 
 bool confirm_dlp_print(wxWindow *parent, const SLAPrint &sla_print)
 {
-    const bool confirmed = show_print_confirmation(parent, sla_print);
-    dlp::debug_log(confirmed ? "GUI DLP print: print confirmed"
-                             : "GUI DLP print: print confirmation cancelled");
-    BOOST_LOG_TRIVIAL(info) << "DLP print: print " << (confirmed ? "confirmed" : "cancelled")
-                            << " after PNG export to " << sla_print.png_export_dir();
-    return confirmed;
+    dlp::debug_log("GUI DLP print: opening live print panel");
+    BOOST_LOG_TRIVIAL(info) << "DLP print: opening live print panel for "
+                            << sla_print.png_export_dir();
+
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    (void)parent;
+    wxGetApp().plater()->start_embedded_dlp_print(sla_print.png_export_dir(), true);
+    return true;
+#else
+    std::string launch_error;
+    std::string log_path;
+    if (!start_airprint(sla_print.png_export_dir(), launch_error, log_path)) {
+        dlp::debug_log("GUI DLP print: AirPrint launch failed: " + launch_error);
+        BOOST_LOG_TRIVIAL(error) << "DLP print: AirPrint launch failed: " << launch_error;
+        show_error(parent, from_u8(launch_error));
+        return false;
+    }
+
+    show_info(parent,
+              _L("The print has started. Progress is written to:") + "\n" + from_u8(log_path),
+              _L("Print started"));
+    return true;
+#endif
 }
 
 }} // namespace Slic3r::GUI

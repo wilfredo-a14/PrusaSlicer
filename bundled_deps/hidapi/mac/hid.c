@@ -714,8 +714,9 @@ hid_device * HID_API_EXPORT hid_open_path(const char *path)
 		goto return_error;
 	}
 
-	/* Open the IOHIDDevice */
-	IOReturn ret = IOHIDDeviceOpen(dev->device_handle, kIOHIDOptionsTypeSeizeDevice);
+	/* Open shared. SeizeDevice requires macOS Input Monitoring and fails for
+	   unsigned GUI apps even when hid_enumerate can see the device. */
+	IOReturn ret = IOHIDDeviceOpen(dev->device_handle, kIOHIDOptionsTypeNone);
 	if (ret == kIOReturnSuccess) {
 		char str[32];
 

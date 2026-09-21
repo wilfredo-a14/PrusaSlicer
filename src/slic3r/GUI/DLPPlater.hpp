@@ -15,8 +15,7 @@ namespace Slic3r { namespace GUI {
 // slicing and PNG export to begin immediately.
 bool prepare_dlp_print(wxWindow *parent, SLAPrint &sla_print);
 
-// Review the active settings after slicing and PNG export have completed.
-// This dialog confirms only the print, not the preceding slice/export.
+// After PNG export, open the in-plater live print panel and start printing.
 bool confirm_dlp_print(wxWindow *parent, const SLAPrint &sla_print);
 
 }} // namespace Slic3r::GUI

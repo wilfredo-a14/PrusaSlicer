@@ -333,6 +333,8 @@ set(SLIC3R_SOURCES
     DLPCorkscrew.hpp
     DLPDebugLog.cpp
     DLPDebugLog.hpp
+    DLPAirPrintLaunch.cpp
+    DLPAirPrintLaunch.hpp
     DLPExport.cpp
     DLPExport.hpp
     PrintObject.cpp
@@ -555,6 +557,10 @@ if (APPLE)
 endif ()
 
 add_library(libslic3r STATIC ${SLIC3R_SOURCES})
+
+if (SLIC3R_DLP_FILE_LOG)
+    target_compile_definitions(libslic3r PUBLIC SLIC3R_DLP_FILE_LOG=1)
+endif()
 
 if (WIN32)
     target_compile_definitions(libslic3r PUBLIC NOMINMAX)

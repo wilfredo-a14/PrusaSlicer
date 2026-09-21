@@ -540,6 +540,7 @@ public:
 	std::string                 output_filename(const std::string &filename_base = std::string()) const override;
 
     const SLAPrintStatistics&   print_statistics() const { return m_print_statistics; }
+    SLAPrintStatistics&         print_statistics()       { return m_print_statistics; }
 
     std::string validate(std::vector<std::string>* warnings = nullptr) const override;
 

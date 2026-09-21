@@ -1304,6 +1304,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,                      max_print_height))
     ((ConfigOptionFloat,                      display_width))
     ((ConfigOptionFloat,                      display_height))
+    ((ConfigOptionFloat,                      display_grid_spacing))
     ((ConfigOptionInt,                        display_pixels_x))
     ((ConfigOptionInt,                        display_pixels_y))
     ((ConfigOptionEnum<SLADisplayOrientation>,display_orientation))

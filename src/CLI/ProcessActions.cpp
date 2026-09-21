@@ -425,8 +425,11 @@ bool process_actions(Data& cli, const DynamicPrintConfig& print_config, std::vec
                             if (verify.failed_layers > 0)
                                 boost::nowide::cout << ", " << verify.failed_layers << " failed";
                             boost::nowide::cout << ")" << std::endl;
-                            boost::nowide::cout << "Debug log: " << dlp::debug_log_path() << std::endl;
-                            dlp::print_debug_log_tail(10);
+                            const std::string debug_log_file = dlp::debug_log_path();
+                            if (!debug_log_file.empty()) {
+                                boost::nowide::cout << "Debug log: " << debug_log_file << std::endl;
+                                dlp::print_debug_log_tail(10);
+                            }
                             if (!verify.ok)
                                 return false;
                         }

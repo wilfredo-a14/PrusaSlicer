@@ -7,22 +7,20 @@
 #include <boost/nowide/iostream.hpp>
 
 #include <chrono>
+#ifdef SLIC3R_DLP_FILE_LOG
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#endif
 #include <iomanip>
+#ifdef SLIC3R_DLP_FILE_LOG
 #include <mutex>
+#endif
 #include <sstream>
 
 namespace Slic3r::dlp {
 
 namespace {
-
-std::mutex &log_mutex()
-{
-    static std::mutex m;
-    return m;
-}
 
 bool &mirror_stdout_flag()
 {
@@ -30,10 +28,18 @@ bool &mirror_stdout_flag()
     return enabled;
 }
 
+#ifdef SLIC3R_DLP_FILE_LOG
+std::mutex &log_mutex()
+{
+    static std::mutex m;
+    return m;
+}
+
 std::filesystem::path log_file_path()
 {
     return std::filesystem::current_path() / "logs" / "dlp_corkscrew.log";
 }
+#endif
 
 std::string timestamp()
 {
@@ -52,15 +58,27 @@ void set_debug_log_mirror_stdout(bool enable) { mirror_stdout_flag() = enable; }
 
 bool debug_log_mirror_stdout() { return mirror_stdout_flag(); }
 
-std::string debug_log_path() { return log_file_path().string(); }
+std::string debug_log_path()
+{
+#ifdef SLIC3R_DLP_FILE_LOG
+    return log_file_path().string();
+#else
+    return {};
+#endif
+}
 
 void debug_log(const std::string &message)
 {
+#ifndef SLIC3R_DLP_FILE_LOG
+    if (!mirror_stdout_flag())
+        return;
+#endif
     const std::string line = "[" + timestamp() + "] " + message;
 
     if (mirror_stdout_flag())
         boost::nowide::cout << line << std::endl;
 
+#ifdef SLIC3R_DLP_FILE_LOG
     std::lock_guard<std::mutex> lock(log_mutex());
 
     namespace fs = std::filesystem;
@@ -73,10 +91,12 @@ void debug_log(const std::string &message)
         return;
 
     out << line << '\n';
+#endif
 }
 
 void print_debug_log_tail(size_t line_count)
 {
+#ifdef SLIC3R_DLP_FILE_LOG
     if (line_count == 0)
         return;
 
@@ -100,6 +120,9 @@ void print_debug_log_tail(size_t line_count)
     boost::nowide::cout << "--- last " << lines.size() << " debug log lines ---" << std::endl;
     for (const std::string &l : lines)
         boost::nowide::cout << l << std::endl;
+#else
+    (void) line_count;
+#endif
 }
 
 } // namespace Slic3r::dlp
