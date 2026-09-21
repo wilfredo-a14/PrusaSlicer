@@ -71,6 +71,7 @@ function(add_cmake_project projectname)
             -DCMAKE_CXX_FLAGS_${_build_type_upper}:STRING=${CMAKE_CXX_FLAGS_${_build_type_upper}}
             -DCMAKE_C_FLAGS_${_build_type_upper}:STRING=${CMAKE_C_FLAGS_${_build_type_upper}}
             -DCMAKE_TOOLCHAIN_FILE:STRING=${CMAKE_TOOLCHAIN_FILE}
+            -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
             -DBUILD_SHARED_LIBS:BOOL=${BUILD_SHARED_LIBS}
             "${_configs_line}"
             ${DEP_CMAKE_OPTS}

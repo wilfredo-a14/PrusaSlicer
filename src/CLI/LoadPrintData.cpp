@@ -35,7 +35,7 @@ static bool can_apply_printer_technology(PrinterTechnology& printer_technology, 
     bool invalid_other_pt = printer_technology != other_printer_technology && other_printer_technology != ptUnknown;
 
     if (invalid_other_pt)
-        boost::nowide::cerr << "Mixing configurations for FFF and SLA technologies" << std::endl;
+        boost::nowide::cerr << "Mixing configurations from different printing technologies" << std::endl;
 
     return !invalid_other_pt;
 }
@@ -183,7 +183,7 @@ static bool finalize_print_config(DynamicPrintConfig& print_config, PrinterTechn
     print_config.normalize_fdm();
 
     if (printer_technology == ptUnknown)
-        printer_technology = cli.actions_config.has("export_sla") ? ptSLA : ptFFF;
+        printer_technology = ptSLA;
     print_config.option<ConfigOptionEnum<PrinterTechnology>>("printer_technology", true)->value = printer_technology;
 
     // Initialize full print configs for both the FFF and SLA technologies.

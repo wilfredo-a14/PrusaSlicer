@@ -665,6 +665,7 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
 
         if (is_world_coordinates()) {
             m_new_position = volume->get_instance_offset();
+            m_new_position.z() = selection.get_scaled_instance_bounding_box().min.z();
             m_new_size = selection.get_bounding_box_in_current_reference_system().first.size();
             m_new_scale = m_new_size.cwiseQuotient(selection.get_unscaled_instance_bounding_box().size()) * 100.0;
             m_new_rotate_label_string = L("Rotate (relative)");
@@ -684,6 +685,7 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
     else if (selection.is_single_full_object() && obj_list->is_selected(itObject)) {
         const BoundingBoxf3& box = selection.get_bounding_box();
         m_new_position = box.center();
+        m_new_position.z() = box.min.z();
         m_new_rotation = Vec3d::Zero();
         m_new_scale    = Vec3d(100.0, 100.0, 100.0);
         m_new_size = selection.get_bounding_box_in_current_reference_system().first.size();
@@ -700,6 +702,7 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
             const Vec3d& offset = trafo.get_offset();
 
             m_new_position = offset;
+            m_new_position.z() = get_volume_min_z(*volume);
             m_new_rotate_label_string = L("Rotate (relative)");
             m_new_scale_label_string = L("Scale");
             m_new_scale = Vec3d(100.0, 100.0, 100.0);
@@ -805,6 +808,7 @@ void ObjectManipulation::update_if_dirty()
     }
 
     m_dirty = false;
+    wxGetApp().sidebar().show_info_sizer();
 }
 
 void ObjectManipulation::update_reset_buttons_visibility()
@@ -958,8 +962,10 @@ void ObjectManipulation::change_position_value(int axis, double value)
     case ECoordinatesType::Local:    { trafo_type.set_local(); break; }
     default:                         { break; }
     }
-    selection.translate(position - m_cache.position, trafo_type);
-    canvas->do_move(L("Set Position"));
+    selection.translate(position - m_cache.position, trafo_type, false);
+    // Preserve an explicitly entered Z position when any coordinate is edited.
+    // The dedicated drop-to-bed action remains available when that is desired.
+    canvas->do_move(L("Set Position"), false);
 
     m_cache.position = position;
     m_cache.position_rounded(axis) = DBL_MAX;

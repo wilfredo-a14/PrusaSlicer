@@ -276,6 +276,8 @@ set(SLIC3R_SOURCES
     FileReader.hpp
     MultiMaterialSegmentation.cpp
     MultiMaterialSegmentation.hpp
+    MultiBox/MultiBoxExporter.cpp
+    MultiBox/MultiBoxExporter.hpp
     MeshNormals.hpp
     MeshNormals.cpp
     Measure.hpp
@@ -325,6 +327,16 @@ set(SLIC3R_SOURCES
     PrintBase.hpp
     PrintConfig.cpp
     PrintConfig.hpp
+    DLPConfig.cpp
+    DLPConfig.hpp
+    DLPCorkscrew.cpp
+    DLPCorkscrew.hpp
+    DLPDebugLog.cpp
+    DLPDebugLog.hpp
+    DLPAirPrintLaunch.cpp
+    DLPAirPrintLaunch.hpp
+    DLPExport.cpp
+    DLPExport.hpp
     PrintObject.cpp
     PrintObjectSlice.cpp
     PrintRegion.cpp
@@ -545,6 +557,10 @@ if (APPLE)
 endif ()
 
 add_library(libslic3r STATIC ${SLIC3R_SOURCES})
+
+if (SLIC3R_DLP_FILE_LOG)
+    target_compile_definitions(libslic3r PUBLIC SLIC3R_DLP_FILE_LOG=1)
+endif()
 
 if (WIN32)
     target_compile_definitions(libslic3r PUBLIC NOMINMAX)

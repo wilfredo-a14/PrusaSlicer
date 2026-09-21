@@ -123,6 +123,10 @@ if (APPLE)
     )
 endif ()
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL 4.0)
+    list(APPEND DEP_CMAKE_OPTS "-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
+endif ()
+
 list_projects(FOUND_PACKAGES ${CMAKE_CURRENT_LIST_DIR})
 
 dep_message(STATUS "Found external package definitions: ${FOUND_PACKAGES}")

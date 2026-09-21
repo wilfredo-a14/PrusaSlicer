@@ -44,6 +44,7 @@ class ObjectManipulation;
 class ObjectSettings;
 class ObjectLayers;
 class ObjectList;
+class PlaterPrintSettings;
 class PlaterPresetComboBox;
 class Plater;
 
@@ -91,6 +92,7 @@ class Sidebar : public wxPanel
 
     std::unique_ptr<FreqChangedParams>  m_frequently_changed_parameters;
     std::unique_ptr<ObjectManipulation> m_object_manipulation;
+    std::unique_ptr<PlaterPrintSettings> m_plater_print_settings;
     std::unique_ptr<ObjectSettings>     m_object_settings;
     std::unique_ptr<ObjectLayers>       m_object_layers;
 

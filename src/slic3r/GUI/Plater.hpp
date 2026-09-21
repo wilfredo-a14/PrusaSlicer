@@ -178,6 +178,9 @@ public:
 
     void select_view(const std::string& direction);
     void select_view_3D(const std::string& name);
+    // Switch the plater canvas to the embedded AirPrint panel and start printing.
+    void start_embedded_dlp_print(const std::string &image_directory,
+                                  bool sliced_or_resliced = false);
 
     bool is_preview_shown() const;
     bool is_preview_loaded() const;
@@ -223,6 +226,7 @@ public:
         const std::function<void()> &callable
     );
     void export_gcode(bool prefer_removable);
+    void start_dlp_print();
     void export_all_gcodes(bool prefer_removable);
     void export_stl_obj(bool extended = false, bool selection_only = false);
     bool export_3mf(const boost::filesystem::path& output_path = boost::filesystem::path());
@@ -231,7 +235,8 @@ public:
     void reload_all_from_disk();
     bool has_toolpaths_to_export() const;
     void export_toolpaths_to_obj() const;
-    void reslice();
+    void export_multibox_pngs();
+    void reslice(bool user_initiated_print = false);
     void reslice_FFF_until_step(PrintObjectStep step, const ModelObject &object, bool postpone_error_messages = false);
     void reslice_SLA_until_step(SLAPrintObjectStep step, const ModelObject &object, bool postpone_error_messages = false);
 
@@ -380,6 +385,7 @@ public:
 
 	void set_bed_shape() const;
     void set_bed_shape(const Pointfs& shape, const double max_print_height, const std::string& custom_texture, const std::string& custom_model, bool force_as_custom = false) const;
+    void set_bed_grid_spacing(double grid_spacing);
     void set_default_bed_shape() const;
 
     NotificationManager* get_notification_manager();

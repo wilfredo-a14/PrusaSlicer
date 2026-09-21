@@ -31,5 +31,5 @@ ExternalProject_Add(dep_OpenSSL
         no-dynamic-engine
         -Wa,--noexecstack
     BUILD_COMMAND make depend && make "-j${NPROC}"
-    INSTALL_COMMAND make install_sw
+    INSTALL_COMMAND make -j1 install_sw
 )

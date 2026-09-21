@@ -43,14 +43,12 @@ public:
 
     void init_from_bundle(PresetBundle* preset_bundle);
 
-	enum LabelItemType {
-		LABEL_ITEM_PHYSICAL_PRINTER = 0xffffff01,
-		LABEL_ITEM_DISABLED,
-		LABEL_ITEM_MARKER,
-		LABEL_ITEM_PHYSICAL_PRINTERS,
-		LABEL_ITEM_WIZARD_PRINTERS,
-        LABEL_ITEM_WIZARD_FILAMENTS,
-        LABEL_ITEM_WIZARD_MATERIALS,
+		enum LabelItemType {
+			LABEL_ITEM_DISABLED = 0xffffff01,
+			LABEL_ITEM_MARKER,
+			LABEL_ITEM_WIZARD_PRINTERS,
+	        LABEL_ITEM_WIZARD_FILAMENTS,
+	        LABEL_ITEM_WIZARD_MATERIALS,
 
         LABEL_ITEM_MAX,
 	};
@@ -70,10 +68,6 @@ public:
     // select preset which is selected in PreseBundle
     void update_from_bundle();
 
-    void edit_physical_printer();
-    void add_physical_printer();
-    void open_physical_printer_url();
-    bool del_physical_printer(const wxString& note_string = wxEmptyString);
     void show_modif_preset_separately() { m_show_modif_preset_separately = true; }
 
     virtual wxString get_preset_name(const Preset& preset); 
@@ -187,7 +181,6 @@ public:
     void sys_color_changed() override;
     void OnSelect(wxCommandEvent& evt) override;
 
-    std::string get_selected_ph_printer_name() const;
 };
 
 

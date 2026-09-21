@@ -18,6 +18,11 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "Plater.hpp"
+#include "DLPPlater.hpp"
+#ifdef CLIP3D_NATIVE_AIRPRINT
+#include "DLPPrintPanel.hpp"
+#endif
+#include "libslic3r/DLPExport.hpp"
 #include "slic3r/GUI/BitmapCache.hpp"
 #include "slic3r/GUI/Jobs/UIThreadWorker.hpp"
 #include "slic3r/Utils/PrusaConnect.hpp"
@@ -53,6 +58,7 @@
 #include <wx/progdlg.h>
 #include <wx/wupdlock.h>
 #include <wx/numdlg.h>
+#include <wx/textdlg.h>
 #include <wx/debug.h>
 #include <wx/busyinfo.h>
 #include <wx/stdpaths.h>
@@ -73,6 +79,8 @@
 #include "libslic3r/SLA/ReprojectPointsOnMesh.hpp"
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "Jobs/MultiBoxExportJob.hpp"
+#include "Jobs/Worker.hpp"
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -289,6 +297,10 @@ struct Plater::priv
     GLToolbar view_toolbar;
     GLToolbar collapse_toolbar;
     Preview *preview;
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    DLPPrintPanel *dlp_print { nullptr };
+    bool sidebar_collapsed_before_dlp_print { false };
+#endif
     std::unique_ptr<NotificationManager> notification_manager;
     std::unique_ptr<UserAccount> user_account;
     // Login dialog needs to be kept somewhere.
@@ -299,6 +311,7 @@ struct Plater::priv
      
     BackgroundSlicingProcess    background_process;
     bool suppressed_backround_processing_update { false };
+    bool dlp_print_confirmation_pending { false };
 
     // TODO: A mechanism would be useful for blocking the plater interactions:
     // objects would be frozen for the user. In case of arrange, an animation
@@ -678,12 +691,18 @@ void Plater::priv::init()
 
     view3D = new View3D(q, bed, &model, config, &background_process);
     preview = new Preview(q, bed, &model, config, &background_process, &gcode_results, [this]() { schedule_background_process(); });
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    dlp_print = new DLPPrintPanel(q);
+#endif
 
     // set default view_toolbar icons size equal to GLGizmosManager::Default_Icons_Size
     view_toolbar.set_icons_size(GLGizmosManager::Default_Icons_Size);
 
     panels.push_back(view3D);
     panels.push_back(preview);
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    panels.push_back(dlp_print);
+#endif
 
     this->background_process_timer.SetOwner(this->q, 0);
     this->q->Bind(wxEVT_TIMER, [this](wxTimerEvent &evt)
@@ -698,6 +717,10 @@ void Plater::priv::init()
     panel_sizer = new wxBoxSizer(wxHORIZONTAL);
     panel_sizer->Add(view3D, 1, wxEXPAND | wxALL, 0);
     panel_sizer->Add(preview, 1, wxEXPAND | wxALL, 0);
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    panel_sizer->Add(dlp_print, 1, wxEXPAND | wxALL, 0);
+    dlp_print->Hide();
+#endif
     hsizer->Add(panel_sizer, 1, wxEXPAND | wxALL, 0);
     hsizer->Add(sidebar, 0, wxEXPAND | wxLEFT | wxRIGHT, 0);
     q->SetSizer(hsizer);
@@ -1174,6 +1197,10 @@ void Plater::priv::select_view_3D(const std::string& name)
         set_current_panel(view3D);
     else if (name == "Preview")
         set_current_panel(preview);
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    else if (name == "Print")
+        set_current_panel(dlp_print);
+#endif
 
     apply_free_camera_correction(false);
 }
@@ -1340,7 +1367,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
 
         if (type_printRequest && printer_technology != ptSLA) {
             Slic3r::GUI::show_info(nullptr,
-                _L("PrintRequest can only be loaded if an SLA printer is selected."),
+                _L("PrintRequest can only be loaded if a printer is selected."),
                 _L("Error!"));
             continue;
         }
@@ -1449,8 +1476,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 //if (loaded_printer_technology == ptFFF && load_model)
                 //    CustomGCode::update_custom_gcode_per_print_z_from_config(model.custom_gcode_per_print_z(), &preset_bundle->project_config);
 
-                // For exporting from the 3mf we shouldn't check printer_presets for the containing information about "Print Host upload"
-                wxGetApp().load_current_presets(false);
+                wxGetApp().load_current_presets();
                 // Update filament colors for the MM-printer profile in the full config
                 // to avoid black (default) colors for Extruders in the ObjectList,
                 // when for extruder colors are used filament colors
@@ -1538,17 +1564,6 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 }
             }
 
-            if ((wxGetApp().get_mode() == comSimple) && type_3mf && model_has_advanced_features(model)) {
-                MessageDialog msg_dlg(q, _L("This file cannot be loaded in a simple mode. Do you want to switch to an advanced mode?")+"\n",
-                    _L("Detected advanced data"), wxICON_WARNING | wxOK | wxCANCEL);
-                if (msg_dlg.ShowModal() == wxID_OK) {
-                    if (wxGetApp().save_mode(comAdvanced))
-                        view3D->set_as_dirty();
-                }
-                else
-                    continue;// return obj_idxs;
-            }
-
             for (ModelObject* model_object : model.objects) {
                 if (!type_3mf) {
                     model_object->center_around_origin(false);
@@ -1605,7 +1620,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                         preset_bundle->sla_materials.select_preset_by_name(preset_name, false, true);
                         preset_bundle->tmp_installed_presets = { preset_name };
                         q->notify_about_installed_presets();
-                        wxGetApp().load_current_presets(false);// For this case we shouldn't check printer_presets
+                        wxGetApp().load_current_presets();
                     }
                     break;
                 }
@@ -2354,6 +2369,13 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
 
     // Get the config ready. The binary gcode flag depends on Preferences, which the backend has no access to.
     DynamicPrintConfig full_config = wxGetApp().preset_bundle->full_config();
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    // This workflow exposes a single, uniform layer height. PrusaSlicer's
+    // hidden SLA material default is 0.3 mm, which would otherwise consume
+    // the first 0.3 mm as one thick layer and omit the expected image slices.
+    if (printer_technology == ptSLA)
+        full_config.set("initial_layer_height", full_config.opt_float("layer_height"));
+#endif
     if (full_config.has("binary_gcode")) // needed for SLA
         full_config.set("binary_gcode", bool(full_config.opt_bool("binary_gcode") & wxGetApp().app_config->get_bool("use_binary_gcode_when_supported")));
 
@@ -2548,7 +2570,7 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
         dirty_state.update_from_preview();
 
         const wxString slice_string = background_process.running() && wxGetApp().get_mode() == comSimple ?
-                                      _L("Slicing") + dots : _L("Slice now");
+                                      _L("Slicing") + dots : _L("Slice");
         sidebar->set_btn_label(ActionButtonType::Reslice, slice_string);
         if (background_process.finished())
             show_action_buttons(false);
@@ -3109,6 +3131,12 @@ void Plater::priv::set_current_panel(wxPanel* panel)
 
     wxPanel* old_panel = current_panel;
     current_panel = panel;
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    if (old_panel == dlp_print && current_panel != dlp_print) {
+        q->collapse_sidebar(sidebar_collapsed_before_dlp_print);
+        show_action_buttons(ready_to_slice);
+    }
+#endif
     // to reduce flickering when changing view, first set as visible the new current panel
     for (wxPanel* p : panels) {
         if (p == current_panel) {
@@ -3195,6 +3223,20 @@ void Plater::priv::set_current_panel(wxPanel* panel)
         if (notification_manager != nullptr)
             notification_manager->set_in_preview(true);
     }
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    else if (current_panel == dlp_print) {
+        if (old_panel == view3D)
+            view3D->get_canvas3d()->unbind_event_handlers();
+        else if (old_panel == preview)
+            preview->get_canvas3d()->unbind_event_handlers();
+        if (old_panel != dlp_print) {
+            sidebar_collapsed_before_dlp_print = q->is_sidebar_collapsed();
+            q->collapse_sidebar(true);
+        }
+        if (notification_manager != nullptr)
+            notification_manager->set_in_preview(false);
+    }
+#endif
 
     current_panel->SetFocusFromKbd();
 }
@@ -3455,6 +3497,19 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
         s_print_statuses[s_multiple_beds.get_active_bed()] = PrintStatus::idle;
     }
 
+    // Replace PrusaSlicer's legacy tilt-cycle layer times with the native
+    // AirPrint plan before the sidebar, slider and SLA layer legend read them.
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    if (evt.success() && this->printer_technology == ptSLA) {
+        SLAPrintStatistics &statistics = q->active_sla_print().print_statistics();
+        statistics.layers_times_running_total =
+            estimate_native_dlp_layer_completion_seconds(q->active_sla_print());
+        statistics.estimated_print_time = statistics.layers_times_running_total.empty() ?
+            0.0 : statistics.layers_times_running_total.back();
+        statistics.estimated_print_time_tolerance = 0.0;
+    }
+#endif
+
     this->sidebar->show_sliced_info_sizer(evt.success());
     if (evt.success()) {
         s_print_statuses[s_multiple_beds.get_active_bed()] = PrintStatus::finished;
@@ -3477,7 +3532,7 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
 	
     if (evt.cancelled()) {
         if (wxGetApp().get_mode() == comSimple)
-            sidebar->set_btn_label(ActionButtonType::Reslice, "Slice now");
+            sidebar->set_btn_label(ActionButtonType::Reslice, "Slice");
         show_action_buttons(true);
     } else {
         if(wxGetApp().get_mode() == comSimple) {
@@ -3498,6 +3553,13 @@ void Plater::priv::on_process_completed(SlicingProcessCompletedEvent &evt)
             notification_manager->push_exporting_finished_notification(last_output_path, last_output_dir_path, false);
     }
     exporting_status = ExportingStatus::NOT_EXPORTING;
+
+    // Match PrusaSlicer's standard workflow: once slicing has completed
+    // successfully, show the layer preview (including its layer slider).
+    // Only transition from the editor so a running print panel is never
+    // replaced, and so completion of the preview's own refresh cannot loop.
+    if (evt.success() && current_panel == view3D)
+        select_view_3D("Preview");
 }
 
 void Plater::priv::on_layer_editing_toggled(bool enable)
@@ -3701,7 +3763,10 @@ void Plater::priv::set_current_canvas_as_dirty()
 
 GLCanvas3D* Plater::priv::get_current_canvas3D()
 {
-    return (current_panel == view3D) ? view3D->get_canvas3d() : ((current_panel == preview) ? preview->get_canvas3d() : nullptr);
+    // Upstream callers assume this accessor always returns a canvas. The
+    // embedded DLP print panel is not a GL canvas, so use the hidden editor
+    // canvas as a safe update target while that panel is active.
+    return current_panel == preview ? preview->get_canvas3d() : view3D->get_canvas3d();
 }
 
 void Plater::priv::render_sliders(GLCanvas3D& canvas)
@@ -3920,7 +3985,10 @@ bool Plater::priv::can_reload_from_disk() const
 
 void Plater::priv::set_bed_shape(const Pointfs& shape, const double max_print_height, const std::string& custom_texture, const std::string& custom_model, bool force_as_custom)
 {
-    bool new_shape = bed.set_shape(shape, max_print_height, custom_texture, custom_model, force_as_custom);
+    const double grid_spacing = config->has("display_grid_spacing") ?
+        config->opt_float("display_grid_spacing") : 5.0;
+    bool new_shape = bed.set_shape(shape, max_print_height, custom_texture, custom_model,
+        force_as_custom, grid_spacing);
     if (new_shape) {
         if (view3D) view3D->bed_shape_changed();
         if (preview) preview->bed_shape_changed();
@@ -4065,6 +4133,22 @@ void Plater::priv::show_action_buttons(const bool ready_to_slice_) const
     const auto print_host_opt = selected_printer_config ? selected_printer_config->option<ConfigOptionString>("print_host") : nullptr;
     const bool send_gcode_shown = print_host_opt != nullptr && !print_host_opt->value.empty();
     const bool connect_gcode_shown = print_host_opt == nullptr && can_show_upload_to_connect();
+
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    const bool show_dlp_actions = true;
+#else
+    const bool show_dlp_actions = printer_technology == ptSLA;
+#endif
+    if (show_dlp_actions) {
+        if (sidebar->show_reslice(true) |
+            sidebar->show_export(true) |
+            sidebar->show_send(false) |
+            sidebar->show_connect(false) |
+            sidebar->show_export_removable(false))
+            sidebar->Layout();
+        return;
+    }
+
     // when a background processing is ON, export_btn and/or send_btn are showing
     if (get_config_bool("background_processing"))
     {
@@ -4235,11 +4319,10 @@ void Plater::priv::undo_redo_to(std::vector<UndoRedo::Snapshot>::const_iterator 
     bool 				printer_technology_changed 	= this->printer_technology != new_printer_technology;
     if (printer_technology_changed) {
         // Switching the printer technology when jumping forwards / backwards in time. Switch to the last active printer profile of the other type.
-        std::string s_pt = (it_snapshot->snapshot_data.printer_technology == ptFFF) ? "FFF" : "SLA";
         if (!wxGetApp().check_and_save_current_preset_changes(_L("Undo / Redo is processing"), 
 //            format_wxstr(_L("%1% printer was active at the time the target Undo / Redo snapshot was taken. Switching to %1% printer requires reloading of %1% presets."), s_pt)))
-            format_wxstr(_L("Switching the printer technology from %1% to %2%.\n"
-                            "Some %1% presets were modified, which will be lost after switching the printer technology."), s_pt =="FFF" ? "SLA" : "FFF", s_pt), false))
+            _L("Switching the printer configuration.\n"
+               "Some presets were modified and will be lost after switching."), false))
             // Don't switch the profiles.
             return;
     }
@@ -4327,13 +4410,6 @@ void Plater::priv::update_after_undo_redo(const UndoRedo::Snapshot& snapshot, bo
 
     s_multiple_beds.update_shown_beds(model, q->build_volume(), false);
     wxGetApp().obj_list()->update_after_undo_redo();
-
-    if (wxGetApp().get_mode() == comSimple && model_has_advanced_features(this->model)) {
-        // If the user jumped to a snapshot that require user interface with advanced features, switch to the advanced mode without asking.
-        // There is a little risk of surprising the user, as he already must have had the advanced or expert mode active for such a snapshot to be taken.
-        if (wxGetApp().save_mode(comAdvanced))
-            view3D->set_as_dirty();
-    }
 
 	// this->update() above was called with POSTPONE_VALIDATION_ERROR_MESSAGE, so that if an error message was generated when updating the back end, it would not open immediately, 
 	// but it would be saved to be show later. Let's do it now. We do not want to display the message box earlier, because on Windows & OSX the message box takes over the message
@@ -4520,7 +4596,7 @@ void Plater::import_sl1_archive()
 {
     auto &w = get_ui_job_worker();
     if (w.is_idle() && p->m_sla_import_dlg->ShowModal() == wxID_OK) {
-        p->take_snapshot(_L("Import SLA archive"));
+        p->take_snapshot(_L("Import print archive"));
         replace_job(w, std::make_unique<SLAImportJob>(p->m_sla_import_dlg));
     }
 }
@@ -5404,6 +5480,18 @@ void Plater::select_view(const std::string& direction) { p->select_view(directio
 
 void Plater::select_view_3D(const std::string& name) { p->select_view_3D(name); }
 
+void Plater::start_embedded_dlp_print(const std::string &image_directory,
+                                      bool sliced_or_resliced)
+{
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    p->dlp_print->start_print(image_directory, sliced_or_resliced);
+    p->select_view_3D("Print");
+#else
+    (void)image_directory;
+    (void)sliced_or_resliced;
+#endif
+}
+
 bool Plater::is_preview_shown() const { return p->is_preview_shown(); }
 bool Plater::is_preview_loaded() const { return p->is_preview_loaded(); }
 bool Plater::is_view3D_shown() const { return p->is_view3D_shown(); }
@@ -5870,8 +5958,41 @@ std::optional<fs::path> Plater::get_multiple_output_dir(const std::string &start
     return output_path;
 }
 
+void Plater::start_dlp_print()
+{
+    if (canvas3D()->get_gizmos_manager().is_in_editing_mode(true))
+        return;
+#ifdef CLIP3D_NATIVE_AIRPRINT
+    if (p->dlp_print != nullptr && p->dlp_print->is_running())
+        return;
+
+    SLAPrint &sla_print = active_sla_print();
+    std::string directory = sla_print.png_export_dir();
+    if (directory.empty() || !dlp::export_directory_has_contents(directory))
+        directory = wxGetApp().app_config->get("dlp_last_slice_directory");
+    start_embedded_dlp_print(directory);
+    return;
+#else
+    if (p->model.objects.empty())
+        return;
+
+    SLAPrint &sla_print = active_sla_print();
+    if (p->background_process.finished() && dlp::export_directory_has_contents(sla_print.png_export_dir())) {
+        confirm_dlp_print(this, sla_print);
+        return;
+    }
+
+    show_error(this, _L("Slice the model first, or choose a folder of layer_<number>.png images in the print panel."));
+#endif
+}
+
 void Plater::export_gcode(bool prefer_removable)
 {
+    if (printer_technology() == ptSLA) {
+        start_dlp_print();
+        return;
+    }
+
     if (p->model.objects.empty())
         return;
 
@@ -6402,7 +6523,50 @@ void Plater::export_toolpaths_to_obj() const
     p->preview->get_canvas3d()->export_toolpaths_to_obj(into_u8(path).c_str());
 }
 
-void Plater::reslice()
+void Plater::export_multibox_pngs()
+{
+    if (printer_technology() != ptSLA)
+        return;
+
+    if (p->background_process.running()) {
+        GUI::show_error(this, _L("Please wait for slicing to finish."));
+        return;
+    }
+
+    SLAPrint &print = this->active_sla_print();
+    if (print.print_layers().empty()) {
+        GUI::show_error(this, _L("Please slice the plate before exporting multi-box PNGs."));
+        return;
+    }
+
+    wxDirDialog dir_dlg(this, _L("Choose multi-box PNG export directory:"), "", wxDD_DEFAULT_STYLE);
+    if (dir_dlg.ShowModal() != wxID_OK)
+        return;
+
+    std::string default_name = "Project";
+    if (!model().objects.empty() && !model().objects.front()->name.empty())
+        default_name = model().objects.front()->name;
+
+    wxTextEntryDialog name_dlg(this, _L("Enter project name for exported files:"), _L("Project name"),
+        from_u8(default_name));
+    if (name_dlg.ShowModal() != wxID_OK)
+        return;
+
+    std::string output_dir   = into_u8(dir_dlg.GetPath());
+    std::string project_name = into_u8(name_dlg.GetValue());
+    if (project_name.empty())
+        project_name = default_name;
+
+    if (!get_ui_job_worker().is_idle()) {
+        GUI::show_error(this, _L("Please wait for the current background task to finish."));
+        return;
+    }
+
+    replace_job(get_ui_job_worker(),
+        std::make_unique<MultiBoxExportJob>(&print, this, std::move(output_dir), std::move(project_name)));
+}
+
+void Plater::reslice(bool user_initiated_print)
 {
     // There is "invalid data" button instead "slice now"
     if (!is_sliceable(s_print_statuses[s_multiple_beds.get_active_bed()]))
@@ -6426,15 +6590,11 @@ void Plater::reslice()
         for (auto& object : model().objects)
             if (object->sla_points_status == sla::PointsStatus::NoPoints)
                 object->sla_points_status = sla::PointsStatus::Generating;
-
-        // Show folder picker for PNG layer export
-        wxDirDialog dlg(this, _L("Choose PNG layer export directory:"),
-                        "C:\\3DPrinter\\output",
-                        wxDD_DEFAULT_STYLE);
-        if (dlg.ShowModal() == wxID_OK) {
-            active_sla_print().set_png_export_dir(into_u8(dlg.GetPath()));
-        } else {
-            active_sla_print().set_png_export_dir("");
+        // The Slice button chooses the PNG folder and rasterizes. Preview
+        // refreshes keep any previously chosen folder and do not start a print.
+        if (user_initiated_print) {
+            if (!prepare_dlp_print(this, active_sla_print()))
+                return;
         }
     }
 
@@ -6448,8 +6608,10 @@ void Plater::reslice()
     // Only restarts if the state is valid.
     this->p->restart_background_process(state | priv::UPDATE_BACKGROUND_PROCESS_FORCE_RESTART);
 
-    if ((state & priv::UPDATE_BACKGROUND_PROCESS_INVALID) != 0)
+    if ((state & priv::UPDATE_BACKGROUND_PROCESS_INVALID) != 0) {
+        p->dlp_print_confirmation_pending = false;
         return;
+    }
 
     bool clean_gcode_toolpaths = true;
     if (p->background_process.running())
@@ -6458,7 +6620,7 @@ void Plater::reslice()
             p->sidebar->set_btn_label(ActionButtonType::Reslice, _L("Slicing") + dots);
         else
         {
-            p->sidebar->set_btn_label(ActionButtonType::Reslice, _L("Slice now"));
+            p->sidebar->set_btn_label(ActionButtonType::Reslice, _L("Slice"));
             p->show_action_buttons(false);
         }
     }
@@ -6943,7 +7105,8 @@ void Plater::on_config_change(const DynamicPrintConfig &config)
             p->view3D->get_canvas3d()->set_sla_view_type(GLCanvas3D::ESLAViewType::Original);
             p->preview->get_canvas3d()->reset_volumes();
         }
-        else if (opt_key == "bed_shape" || opt_key == "bed_custom_texture" || opt_key == "bed_custom_model") {
+        else if (opt_key == "bed_shape" || opt_key == "bed_custom_texture" || opt_key == "bed_custom_model" ||
+                 opt_key == "display_grid_spacing") {
             bed_shape_changed = true;
             update_scheduled = true;
         }
@@ -6995,6 +7158,16 @@ void Plater::set_bed_shape() const
 void Plater::set_bed_shape(const Pointfs& shape, const double max_print_height, const std::string& custom_texture, const std::string& custom_model, bool force_as_custom) const
 {
     p->set_bed_shape(shape, max_print_height, custom_texture, custom_model, force_as_custom);
+}
+
+void Plater::set_bed_grid_spacing(double grid_spacing)
+{
+    if (!p->bed.set_grid_spacing(grid_spacing))
+        return;
+    if (p->view3D)
+        p->view3D->bed_shape_changed();
+    if (p->preview)
+        p->preview->bed_shape_changed();
 }
 
 void Plater::set_default_bed_shape() const
@@ -7281,6 +7454,7 @@ const DynamicPrintConfig * Plater::config() const { return p->config; }
 
 bool Plater::set_printer_technology(PrinterTechnology printer_technology)
 {
+    printer_technology = ptSLA;
     p->printer_technology = printer_technology;
     bool ret = p->background_process.select_technology(printer_technology);
     if (ret) {
@@ -7296,8 +7470,8 @@ bool Plater::set_printer_technology(PrinterTechnology printer_technology)
         }
     }
 
-    p->label_btn_export = printer_technology == ptFFF ? L("Export G-code") : L("Export");
-    p->label_btn_send   = printer_technology == ptFFF ? L("Send G-code")   : L("Send to printer");
+    p->label_btn_export = L("Print");
+    p->label_btn_send   = L("Send Print");
 
     if (wxGetApp().mainframe != nullptr)
         wxGetApp().mainframe->update_menubar();

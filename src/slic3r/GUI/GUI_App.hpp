@@ -285,8 +285,6 @@ public:
     int             get_max_font_pt_size();
     float           toolbar_icon_scale(bool& is_custom) const;
     void            set_auto_toolbar_icon_scale(float scale) const;
-    void            check_printer_presets();
-
     void            recreate_GUI(const wxString& message);
     void            system_info();
     void            keyboard_shortcuts();
@@ -319,7 +317,7 @@ public:
     bool            can_load_project();
     bool            check_print_host_queue();
     bool            checked_tab(Tab* tab);
-    void            load_current_presets(bool check_printer_presets = true);
+    void            load_current_presets();
 
     wxString        current_language_code() const { return m_wxLocale->GetCanonicalName(); }
 	// Translate the language code to a code, for which Prusa Research maintains translations. Defaults to "en_US".
@@ -417,7 +415,6 @@ public:
     void            select_filament_from_connect(const std::string& cmd);
     void            handle_connect_request_printer_select(const std::string& cmd);
     void            handle_connect_request_printer_select_inner(const std::string& cmd);
-    void            show_printer_webview_tab();
     // return true if preset vas invisible and we have to installed it to make it selectable
     bool            select_printer_preset(const Preset* printer_preset);
     bool            select_filament_preset(const Preset* filament_preset, size_t extruder_index);
@@ -445,7 +442,6 @@ private:
     void            window_pos_sanitize(wxTopLevelWindow* window);
     bool            select_language();
 
-    bool            config_wizard_startup();
     // Returns true if the configuration is fine. 
     // Returns true if the configuration is not compatible and the user decided to rather close the slicer instead of reconfiguring.
 	bool            check_updates(const bool invoked_automatically);

@@ -1204,7 +1204,7 @@ void GLCanvas3D::SLAView::render_switch_button()
     ImGui::SetNextWindowPos(ImVec2((float)ss_box.max.x(), (float)ss_box.center().y()), ImGuiCond_Always, ImVec2(0.0, 0.5));
     ImGuiPureWrap::begin(std::string("SLAViewSwitch"), ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration);
     const float icon_size = 1.5 * ImGui::GetTextLineHeight();
-    if (ImGuiPureWrap::draw_radio_button(_u8L("SLA view"), 1.5f * icon_size, true,
+    if (ImGuiPureWrap::draw_radio_button(_u8L("Print view"), 1.5f * icon_size, true,
         [sel_instance](ImGuiWindow& window, const ImVec2& pos, float size) {
             const wchar_t icon_id = (sel_instance->second == ESLAViewType::Original) ? ImGui::SlaViewProcessed : ImGui::SlaViewOriginal;
             wxGetApp().imgui()->draw_icon(window, pos, size, icon_id);
@@ -4302,6 +4302,11 @@ void GLCanvas3D::set_tooltip(const std::string& tooltip)
 
 void GLCanvas3D::do_move(const std::string& snapshot_type)
 {
+    do_move(snapshot_type, true);
+}
+
+void GLCanvas3D::do_move(const std::string& snapshot_type, bool ensure_on_bed)
+{
     if (m_model == nullptr)
         return;
 
@@ -4357,7 +4362,7 @@ void GLCanvas3D::do_move(const std::string& snapshot_type)
     for (const std::pair<int, int>& i : done) {
         ModelObject* m = m_model->objects[i.first];
         const double shift_z = m->get_instance_min_z(i.second);
-        if (current_printer_technology() == ptSLA || shift_z > SINKING_Z_THRESHOLD) {
+        if (ensure_on_bed && (current_printer_technology() == ptSLA || shift_z > SINKING_Z_THRESHOLD)) {
             const Vec3d shift(0.0, 0.0, -shift_z);
             m_selection.translate(i.first, i.second, shift);
             m->translate_instance(i.second, shift);
@@ -5791,9 +5796,9 @@ void GLCanvas3D::_picking_pass()
         if (m_volumes.volumes[hit.raycaster_id]->is_wipe_tower)
             object_type = "Volume (Wipe tower)";
         else if (m_volumes.volumes[hit.raycaster_id]->volume_idx() == -int(slaposPad))
-            object_type = "Volume (SLA pad)";
+            object_type = "Volume (Pad)";
         else if (m_volumes.volumes[hit.raycaster_id]->volume_idx() == -int(slaposSupportTree))
-            object_type = "Volume (SLA supports)";
+            object_type = "Volume (Supports)";
         else if (m_volumes.volumes[hit.raycaster_id]->is_modifier)
             object_type = "Volume (Modifier)";
         else
@@ -7395,7 +7400,7 @@ void GLCanvas3D::_set_warning_notification(EWarning warning, bool state)
     switch (warning) {
     case EWarning::ObjectOutside:      text = _u8L("An object outside the print area was detected."); break;
     case EWarning::ToolpathOutside:    text = _u8L("A toolpath outside the print area was detected."); error = ErrorType::SLICING_ERROR; break;
-    case EWarning::SlaSupportsOutside: text = _u8L("SLA supports outside the print area were detected."); error = ErrorType::PLATER_ERROR; break;
+    case EWarning::SlaSupportsOutside: text = _u8L("Supports outside the print area were detected."); error = ErrorType::PLATER_ERROR; break;
     case EWarning::SomethingNotShown:  text = _u8L("Some objects are not visible during editing."); break;
     case EWarning::ObjectClashed:
         text = _u8L("An object outside the print area was detected.\n"

@@ -27,8 +27,9 @@
 #include <boost/log/trivial.hpp>
 
 #include <numeric>
+#include <cmath>
 
-static const float GROUND_Z = -0.02f;
+static const float GROUND_Z = 0.0f;
 static const Slic3r::ColorRGBA DEFAULT_MODEL_COLOR             = Slic3r::ColorRGBA::DARK_GRAY();
 static const Slic3r::ColorRGBA PICKING_MODEL_COLOR             = Slic3r::ColorRGBA::BLACK();
 static const Slic3r::ColorRGBA DEFAULT_SOLID_GRID_COLOR        = { 0.9f, 0.9f, 0.9f, 1.0f };
@@ -38,7 +39,8 @@ static const Slic3r::ColorRGBA DISABLED_MODEL_COLOR            = { 0.6f, 0.6f, 0
 namespace Slic3r {
 namespace GUI {
 
-bool Bed3D::set_shape(const Pointfs& bed_shape, const double max_print_height, const std::string& custom_texture, const std::string& custom_model, bool force_as_custom)
+bool Bed3D::set_shape(const Pointfs& bed_shape, const double max_print_height, const std::string& custom_texture,
+    const std::string& custom_model, bool force_as_custom, double grid_spacing)
 {
     auto check_texture = [](const std::string& texture) {
         boost::system::error_code ec; // so the exists call does not throw (e.g. after a permission problem)
@@ -75,14 +77,25 @@ bool Bed3D::set_shape(const Pointfs& bed_shape, const double max_print_height, c
     }
 
     
-    if (m_build_volume.bed_shape() == bed_shape && m_build_volume.max_print_height() == max_print_height && m_type == type && m_texture_filename == texture_filename && m_model_filename == model_filename)
-        // No change, no need to update the UI.
-        return false;
+    if (!std::isfinite(grid_spacing) || grid_spacing <= 0.0)
+        grid_spacing = 1.0;
+
+    const bool bed_geometry_unchanged =
+        m_build_volume.bed_shape() == bed_shape &&
+        m_build_volume.max_print_height() == max_print_height &&
+        m_type == type && m_texture_filename == texture_filename &&
+        m_model_filename == model_filename;
+    if (bed_geometry_unchanged) {
+        // Grid spacing does not change the bed geometry. Avoid rebuilding the
+        // bed and its picking data; only replace the grid mesh on next render.
+        return set_grid_spacing(grid_spacing);
+    }
 
     m_type = type;
     m_build_volume = BuildVolume { bed_shape, max_print_height };
     m_texture_filename = texture_filename;
     m_model_filename = model_filename;
+    m_grid_spacing = grid_spacing;
     m_extended_bounding_box = this->calc_extended_bounding_box();
 
     m_contour = ExPolygon(Polygon::new_scale(bed_shape));
@@ -91,7 +104,9 @@ bool Bed3D::set_shape(const Pointfs& bed_shape, const double max_print_height, c
         throw RuntimeError(std::string("Invalid bed shape"));
 
     m_triangles.reset();
-    m_gridlines.reset();
+    // GL resources are owned by the canvas context. Defer deleting and
+    // rebuilding the grid until render_default(), where that context is current.
+    m_gridlines_dirty = true;
     m_contourlines.reset();
     m_texture.reset();
     m_model.reset();
@@ -120,6 +135,18 @@ bool Bed3D::set_shape(const Pointfs& bed_shape, const double max_print_height, c
     m_axes.set_stem_length(0.1f * static_cast<float>(m_build_volume.bounding_volume().max_size()));
 
     // Let the calee to update the UI.
+    return true;
+}
+
+bool Bed3D::set_grid_spacing(double grid_spacing)
+{
+    if (!std::isfinite(grid_spacing) || grid_spacing <= 0.0)
+        grid_spacing = 1.0;
+    if (m_grid_spacing == grid_spacing)
+        return false;
+
+    m_grid_spacing = grid_spacing;
+    m_gridlines_dirty = true;
     return true;
 }
 
@@ -309,6 +336,12 @@ void Bed3D::init_triangles()
 
 void Bed3D::init_gridlines()
 {
+    if (m_gridlines_dirty) {
+        if (m_gridlines.is_initialized())
+            m_gridlines.reset();
+        m_gridlines_dirty = false;
+    }
+
     if (m_gridlines.is_initialized())
         return;
 
@@ -316,16 +349,22 @@ void Bed3D::init_gridlines()
         return;
 
     const BoundingBox& bed_bbox = m_contour.contour.bounding_box();
-    const coord_t step = scale_(10.0);
+    const coord_t step = scale_(m_grid_spacing);
+    if (step <= 0)
+        return;
+
+    const auto first_grid_line = [step](coord_t minimum) {
+        return coord_t(std::ceil(double(minimum) / double(step))) * step;
+    };
 
     Polylines axes_lines;
-    for (coord_t x = bed_bbox.min.x(); x <= bed_bbox.max.x(); x += step) {
+    for (coord_t x = first_grid_line(bed_bbox.min.x()); x <= bed_bbox.max.x(); x += step) {
         Polyline line;
         line.append(Point(x, bed_bbox.min.y()));
         line.append(Point(x, bed_bbox.max.y()));
         axes_lines.push_back(line);
     }
-    for (coord_t y = bed_bbox.min.y(); y <= bed_bbox.max.y(); y += step) {
+    for (coord_t y = first_grid_line(bed_bbox.min.y()); y <= bed_bbox.max.y(); y += step) {
         Polyline line;
         line.append(Point(bed_bbox.min.x(), y));
         line.append(Point(bed_bbox.max.x(), y));

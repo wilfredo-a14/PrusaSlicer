@@ -27,6 +27,14 @@ struct SerialPortInfo {
 	bool id_match(unsigned id_vendor, unsigned id_product) const { return id_vendor == this->id_vendor && id_product == this->id_product; }
 };
 
+struct USBDeviceInfo {
+	std::string friendly_name;
+	std::string manufacturer;
+	std::string serial_number;
+	unsigned    id_vendor = -1;
+	unsigned    id_product = -1;
+};
+
 inline bool operator==(const SerialPortInfo &sp1, const SerialPortInfo &sp2)
 {
 	return
@@ -38,6 +46,7 @@ inline bool operator==(const SerialPortInfo &sp1, const SerialPortInfo &sp2)
 
 extern std::vector<std::string> 	scan_serial_ports();
 extern std::vector<SerialPortInfo> 	scan_serial_ports_extended();
+extern std::vector<USBDeviceInfo> 	scan_usb_devices();
 
 
 class Serial : public boost::asio::serial_port

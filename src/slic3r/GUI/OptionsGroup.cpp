@@ -421,6 +421,13 @@ void OptionsGroup::activate_line(Line& line)
     }
 
     const std::vector<Option>& option_set = line.get_options();
+	if (option_set.empty()) {
+		// A widget-only row has no ConfigOptionDef from which to derive layout metadata.
+		// Treat it as a full-width custom row instead of dereferencing option_set.front().
+		if (line.widget != nullptr)
+			sizer->Add(line.widget(this->ctrl_parent()), 0, wxEXPAND | wxALL, wxOSX ? 0 : 15);
+		return;
+	}
 	bool is_legend_line = option_set.front().opt.gui_type == ConfigOptionDef::GUIType::legend;
 
     if (!custom_ctrl && m_use_custom_ctrl) {

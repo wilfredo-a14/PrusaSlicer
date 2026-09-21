@@ -6,6 +6,7 @@
 #include <boost/nowide/iostream.hpp>
 
 #include "CLI.hpp"
+#include "libslic3r/Preset.hpp"
 
 namespace Slic3r::CLI {
 
@@ -131,7 +132,7 @@ void print_help(bool include_print_options/* = false*/, PrinterTechnology printe
 #endif /* SLIC3R_GUI */
         << std::endl
         << "https://github.com/prusa3d/PrusaSlicer" << std::endl << std::endl
-        << "Usage: prusa-slicer [ INPUT ] [ OPTIONS ] [ ACTIONS ] [ TRANSFORM ] [ file.stl ... ]" << std::endl;
+        << "Usage: prusa-slicer [ INPUT ] [ PRINT OPTIONS ] [ ACTIONS ] [ TRANSFORM ] [ file.stl ... ]" << std::endl;
 
     boost::nowide::cout
         << std::endl
@@ -167,13 +168,22 @@ void print_help(bool include_print_options/* = false*/, PrinterTechnology printe
 
     if (include_print_options) {
         boost::nowide::cout << std::endl;
-        print_help(print_config_def, true, [printer_technology](const ConfigOptionDef& def)
-            { return printer_technology == ptAny || def.printer_technology == ptAny || printer_technology == def.printer_technology; });
+        static const std::set<std::string> dlp_option_keys = [] {
+            std::set<std::string> keys;
+            keys.insert(Preset::sla_print_options().begin(), Preset::sla_print_options().end());
+            keys.insert(Preset::sla_material_options().begin(), Preset::sla_material_options().end());
+            keys.insert(Preset::sla_printer_options().begin(), Preset::sla_printer_options().end());
+            keys.erase("printer_technology");
+            return keys;
+        }();
+        print_help(print_config_def, true, [printer_technology](const ConfigOptionDef& def) {
+            return printer_technology == ptSLA && dlp_option_keys.count(def.opt_key) != 0;
+        });
     }
     else {
         boost::nowide::cout
             << std::endl
-            << "Run --help-fff / --help-sla to see the full listing of print options." << std::endl;
+            << "Run --help-print to see the full listing of print options." << std::endl;
     }
 }
 

@@ -142,7 +142,10 @@ public:
 
     void look_at(const Vec3d& position, const Vec3d& target, const Vec3d& up);
 
-    double max_zoom() const { return 250.0; }
+    // Allow close inspection of sub-millimeter DLP geometry. At the previous
+    // 250 px/mm cap, small features stopped growing well before filling the
+    // plater viewport.
+    double max_zoom() const { return 1000.0; }
     double min_zoom() const { return 0.25 * calc_zoom_to_bounding_box_factor(m_scene_box); }
 
     void set_distance(double distance);
@@ -163,4 +166,3 @@ private:
 } // Slic3r
 
 #endif // slic3r_Camera_hpp_
-

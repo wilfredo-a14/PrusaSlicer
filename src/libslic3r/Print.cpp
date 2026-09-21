@@ -190,7 +190,17 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         "wipe_tower_acceleration"
     };
 
-    static std::unordered_set<std::string> steps_ignore;
+    static const std::unordered_set<std::string> steps_ignore = {
+        "multibox_angle_between_boxes",
+        "multibox_box_height_px",
+        "multibox_box_width_px",
+        "multibox_fab_height_mm",
+        "multibox_fab_width_mm",
+        "multibox_num_boxes",
+        "multibox_pixel_scale_um",
+        "multibox_radius_mm",
+        "multibox_starting_angle",
+    };
 
     std::vector<PrintStep> steps;
     std::vector<PrintObjectStep> osteps;

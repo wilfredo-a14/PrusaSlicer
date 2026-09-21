@@ -42,6 +42,7 @@ option(SLIC3R_ASAN              "Enable ASan on Clang and GCC" 0)
 option(SLIC3R_UBSAN             "Enable UBSan on Clang and GCC" 0)
 option(SLIC3R_ENABLE_FORMAT_STEP "Enable compilation of STEP file support" ON)
 option(SLIC3R_LOG_TO_FILE       "Enable logging into file")
+option(SLIC3R_DLP_FILE_LOG      "Write DLP diagnostic logs to disk" ON)
 option(SLIC3R_REPO_URL          "Preset repo URL")
 
 # SLIC3R_OPENGL_ES can be enabled only if SLIC3R_GUI is enabled.
@@ -175,6 +176,15 @@ foreach (DIR ${PREFIX_PATH_CHECK})
         message(WARNING "CMAKE_PREFIX_PATH element doesn't exist: ${DIR}")
     endif ()
 endforeach ()
+
+if (SLIC3R_STATIC)
+    foreach (DIR ${PREFIX_PATH_CHECK})
+        if (EXISTS "${DIR}/lib/cmake/ZLIB/ZLIBConfig.cmake")
+            set(ZLIB_DIR "${DIR}/lib/cmake/ZLIB" CACHE PATH "Path to bundled ZLIB config" FORCE)
+            break()
+        endif ()
+    endforeach ()
+endif ()
 
 # Add our own cmake module path.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules/)
@@ -378,6 +388,9 @@ find_package(Eigen3 3.3.7 REQUIRED)
 
 add_library(boost_libs INTERFACE)
 add_library(boost_headeronly INTERFACE)
+
+target_include_directories(boost_headeronly INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/boost)
+target_compile_definitions(boost_headeronly INTERFACE BOOST_USER_CONFIG=\"slic3r_boost_user_config.hpp\")
 
 if (APPLE)
     # BOOST_ASIO_DISABLE_KQUEUE : prevents a Boost ASIO bug on OS X: https://svn.boost.org/trac/boost/ticket/5339

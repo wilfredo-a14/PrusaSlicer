@@ -1037,16 +1037,25 @@ void Preview::load_print_as_sla()
     sort_remove_duplicates(zs);
 
     m_canvas->reset_clipping_planes_cache();
-    m_canvas->set_use_clipping_planes(true);
 
     n_layers = (unsigned int)zs.size();
     if (n_layers == 0) {
+        // A position edit invalidates the old slices before the replacement
+        // finishes. Disable their stale clipping range so the moved STL stays
+        // visible while background slicing is running.
+        m_canvas->set_use_clipping_planes(false);
         hide_layers_slider();
         m_canvas_widget->Refresh();
-    }
+    } else
+        m_canvas->set_use_clipping_planes(true);
 
     if (IsShown()) {
-        m_canvas->load_sla_preview();
+        if (n_layers > 0)
+            m_canvas->load_sla_preview();
+        else
+            // The SLA shell is temporarily unavailable after a transform.
+            // Render the source model until the replacement slices finish.
+            m_canvas->reload_scene(true, true);
         m_moves_slider->Hide();
 
         if (n_layers > 0)

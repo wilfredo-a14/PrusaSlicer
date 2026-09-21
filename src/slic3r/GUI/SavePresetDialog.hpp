@@ -23,13 +23,6 @@ namespace GUI {
 
 class SavePresetDialog : public DPIDialog
 {
-    enum ActionType
-    {
-        ChangePreset,
-        AddPreset,
-        Switch, 
-        UndefAction
-    };
 public:
     struct Item
     {
@@ -90,13 +83,8 @@ private:
     std::vector<Item*>   m_items;
 
     wxBoxSizer*         m_presets_sizer     {nullptr};
-    wxStaticText*       m_label             {nullptr};
-    wxBoxSizer*         m_radio_sizer       {nullptr};  
-    ActionType          m_action            {UndefAction};
     wxCheckBox*         m_template_filament_checkbox {nullptr};
 
-    std::string         m_ph_printer_name;
-    std::string         m_old_preset_name;
     bool                m_use_for_rename{false};
     wxString            m_info_line_extention{wxEmptyString};
 
@@ -117,8 +105,6 @@ public:
     std::string     get_name(Preset::Type type);
 
     bool enable_ok_btn() const;
-    void add_info_for_edit_ph_printer(wxBoxSizer *sizer);
-    void update_info_for_edit_ph_printer(const std::string &preset_name);
     bool Layout() override;
     bool is_for_rename() { return m_use_for_rename; }
 
@@ -129,7 +115,6 @@ protected:
 
 private:
     void build(std::vector<Preset::Type> types, std::string suffix = "", bool template_filament = false);
-    void update_physical_printers(const std::string& preset_name);
     void accept();
 };
 

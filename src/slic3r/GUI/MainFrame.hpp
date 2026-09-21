@@ -46,7 +46,6 @@ class MainFrame;
 class PreferencesDialog;
 class GalleryDialog;
 class ConnectWebViewPanel; 
-class PrinterWebViewPanel;
 class PrintablesWebViewPanel;
 
 enum QuickSlice
@@ -104,8 +103,6 @@ class MainFrame : public DPIFrame
     bool                    m_connect_webview_added{ false };
     PrintablesWebViewPanel* m_printables_webview{ nullptr };
     bool                    m_printables_webview_added{ false };
-    PrinterWebViewPanel*    m_printer_webview{ nullptr };
-    bool                    m_printer_webview_added{ false };
 
     std::string     get_base_name(const wxString &full_name, const char *extension = nullptr) const;
     std::string     get_dir_name(const wxString &full_name) const;
@@ -115,6 +112,7 @@ class MainFrame : public DPIFrame
     bool can_start_new_project() const;
     bool can_export_model() const;
     bool can_export_toolpaths() const;
+    bool can_export_multibox_pngs() const;
     bool can_export_supports() const;
     bool can_export_gcode() const;
     bool can_send_gcode() const;
@@ -138,8 +136,8 @@ class MainFrame : public DPIFrame
     {                   //   FFF                  SLA
         miExport = 0,   // Export G-code        Export
         miSend,         // Send G-code          Send to print
-        miMaterialTab,  // Filament Settings    Material Settings
-        miPrinterTab,   // Different bitmap for Printer Settings
+        miMaterialTab,  // Printer Settings in FFF, Material Settings in SLA
+        miPrinterTab,   // Printer Settings in SLA
         miLogin,
     };
 
@@ -233,13 +231,6 @@ public:
     void    add_printables_webview_tab();
     void    remove_printables_webview_tab();
 
-    void    show_printer_webview_tab(DynamicPrintConfig* dpc);
-
-    void    add_printer_webview_tab(const wxString& url);
-    void    remove_printer_webview_tab();
-    bool    get_printer_webview_tab_added() const { return m_printer_webview_added; }
-    void    set_printer_webview_api_key(const std::string& key);
-    void    set_printer_webview_credentials(const std::string& usr, const std::string& psk);
     bool    is_any_webview_selected();
     void    reload_selected_webview();
 

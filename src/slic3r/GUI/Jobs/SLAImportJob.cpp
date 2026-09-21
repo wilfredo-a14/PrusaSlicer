@@ -50,7 +50,7 @@ void SLAImportJob::process(Ctl &ctl)
 {
     if (p->path.empty() || ! p->err.empty()) return;
 
-    auto statustxt = _u8L("Importing SLA archive");
+    auto statustxt = _u8L("Importing print archive");
     ctl.update_status(0, statustxt);
 
     auto progr = [&ctl, &statustxt](int s) {
@@ -78,9 +78,8 @@ void SLAImportJob::process(Ctl &ctl)
             break;
         }
     } catch (MissingProfileError &) {
-        p->err = _u8L("The SLA archive doesn't contain any presets. "
-                      "Please activate some SLA printer preset first before "
-                      "importing that SLA archive.");
+        p->err = _u8L("The print archive doesn't contain any presets. "
+                      "Please activate a printer preset before importing it.");
     } catch (ReaderUnimplementedError &) {
         p->err = _u8L("Import is unavailable for this archive format.");
     }catch (std::exception &ex) {
@@ -136,8 +135,8 @@ void SLAImportJob::finalize(bool canceled, std::exception_ptr &eptr)
         p->plater->get_notification_manager()->push_notification(
         NotificationType::CustomNotification,
         NotificationManager::NotificationLevel::WarningNotificationLevel,
-            _u8L("The imported SLA archive did not contain any presets. "
-               "The current SLA presets were used as fallback."));
+            _u8L("The imported print archive did not contain any presets. "
+               "The current presets were used as fallback."));
     }
 
     if (p->sel != Sel::modelOnly) {
@@ -149,7 +148,7 @@ void SLAImportJob::finalize(bool canceled, std::exception_ptr &eptr)
             if (object->volumes.size() > 1)
             {
                 Slic3r::GUI::show_info(nullptr,
-                                       _(L("You cannot load SLA project with a multi-part object on the bed")) + "\n\n" +
+                                       _(L("You cannot load a project with a multi-part object on the bed")) + "\n\n" +
                                        _(L("Please check your object list before preset changing.")),
                                        _(L("Attention!")) );
                 return;

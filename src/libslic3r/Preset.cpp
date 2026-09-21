@@ -47,6 +47,7 @@
 #include "libslic3r/GCode/Thumbnails.hpp"
 
 #include "PresetBundle.hpp"
+#include "DLPConfig.hpp"
 
 using boost::property_tree::ptree;
 
@@ -626,6 +627,7 @@ static std::vector<std::string> s_Preset_sla_print_options {
     "hollowing_min_thickness",
     "hollowing_quality",
     "hollowing_closing_distance",
+    DLP_SLA_PRINT_PRESET_OPTION_ENTRIES
     "output_filename_format",
     "default_sla_print_profile",
     "compatible_printers",
@@ -653,6 +655,7 @@ static std::vector<std::string> s_Preset_sla_material_options {
     "area_fill",
     "default_sla_material_profile",
     "zcorrection_layers",
+    DLP_SLA_MATERIAL_PRESET_OPTION_ENTRIES
     "compatible_prints", "compatible_prints_condition",
     "compatible_printers", "compatible_printers_condition", "inherits",
 
@@ -698,9 +701,10 @@ static std::vector<std::string> s_Preset_sla_material_options_all = boost::copy_
 static std::vector<std::string> s_Preset_sla_printer_options {
     "printer_technology",
     "bed_shape", "bed_custom_texture", "bed_custom_model", "max_print_height",
-    "display_width", "display_height", "display_pixels_x", "display_pixels_y",
+    "display_width", "display_height", "display_grid_spacing", "display_pixels_x", "display_pixels_y",
     "display_mirror_x", "display_mirror_y",
     "display_orientation",
+    DLP_SLA_PRINTER_PRESET_OPTION_ENTRIES
     "fast_tilt_time", "slow_tilt_time", "high_viscosity_tilt_time", //"area_fill",
     "relative_correction",
     "relative_correction_x",
@@ -835,7 +839,8 @@ void PresetCollection::load_presets(
         }
     m_presets.insert(m_presets.end(), std::make_move_iterator(presets_loaded.begin()), std::make_move_iterator(presets_loaded.end()));
     std::sort(m_presets.begin() + m_num_default_presets, m_presets.end());
-    this->select_preset(first_visible_idx());
+    if (! presets_loaded.empty())
+        this->select_preset(first_visible_idx());
     if (! errors_cummulative.empty())
         throw Slic3r::RuntimeError(errors_cummulative);
 }
@@ -1646,8 +1651,8 @@ std::string PresetCollection::name() const
     switch (this->type()) {
     case Preset::TYPE_PRINT:        return L("print");
     case Preset::TYPE_FILAMENT:     return L("filament");
-    case Preset::TYPE_SLA_PRINT:    return L("SLA print");
-    case Preset::TYPE_SLA_MATERIAL: return L("SLA material");
+    case Preset::TYPE_SLA_PRINT:    return L("print");
+    case Preset::TYPE_SLA_MATERIAL: return L("material");
     case Preset::TYPE_PRINTER:      return L("printer");
     default:                        return "invalid";
     }
@@ -1691,10 +1696,9 @@ std::string PresetCollection::path_from_name(const std::string &new_name) const
     return (boost::filesystem::path(m_dir_path) / file_name).make_preferred().string();
 }
 
-const Preset& PrinterPresetCollection::default_preset_for(const DynamicPrintConfig &config) const
+const Preset& PrinterPresetCollection::default_preset_for(const DynamicPrintConfig &) const
 {
-    const ConfigOptionEnumGeneric *opt_printer_technology = config.opt<ConfigOptionEnumGeneric>("printer_technology");
-    return this->default_preset((opt_printer_technology == nullptr || opt_printer_technology->value == ptFFF) ? 0 : 1);
+    return this->default_preset(0);
 }
 
 const Preset* PrinterPresetCollection::find_system_preset_by_model_and_variant(const std::string &model_id, const std::string& variant) const
