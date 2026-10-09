@@ -244,9 +244,16 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   endforeach()
 
   # Create a subdirectory for the Debug build within the current binary dir:
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/_d)
+  set(_debug_build_dir "${CMAKE_CURRENT_BINARY_DIR}/_d")
+  set(_generator_platform_arg "")
+  if (CMAKE_GENERATOR_PLATFORM)
+    set(_generator_platform_arg "-A${CMAKE_GENERATOR_PLATFORM}")
+    set(_debug_build_dir "${_debug_build_dir}_${CMAKE_GENERATOR_PLATFORM}")
+  endif ()
+  file(MAKE_DIRECTORY ${_debug_build_dir})
   execute_process(
-    COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR} -G${CMAKE_GENERATOR} 
+    COMMAND ${CMAKE_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR} -G${CMAKE_GENERATOR}
+      ${_generator_platform_arg}
       -DCMAKE_BUILD_TYPE=Debug
       -DDEP_WX_GTK3=${DEP_WX_GTK3}
       -D${PROJECT_NAME}_DEP_DOWNLOAD_DIR=${${PROJECT_NAME}_DEP_DOWNLOAD_DIR}
@@ -257,9 +264,13 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
       -DCMAKE_DEBUG_POSTFIX=d
       #TODO: forward per-package selector variables
       -DDEP_MESSAGES_WRITTEN=ON
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/_d 
+    WORKING_DIRECTORY ${_debug_build_dir}
     OUTPUT_QUIET
+    RESULT_VARIABLE _debug_configure_result
   )
+  if (NOT _debug_configure_result EQUAL 0)
+    message(FATAL_ERROR "Failed to configure the Debug dependency build")
+  endif ()
 
   dep_message(STATUS "Building dep targets (Debug): ${_build_list_dbg}")
 
@@ -268,7 +279,7 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   foreach(pkgtgt ${_build_list_filt})
     add_custom_target(${pkgtgt}_debug
       COMMAND ${CMAKE_COMMAND} --build . --target ${pkgtgt}
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/_d
+      WORKING_DIRECTORY ${_debug_build_dir}
       USES_TERMINAL
     )
   endforeach()
@@ -277,7 +288,7 @@ if (DEP_DEBUG AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   string(JOIN " " _build_list_filt_targets "${_build_list_filt}")
   add_custom_target(deps_debug ALL 
     COMMAND ${CMAKE_COMMAND} --build . --target ${_build_list_filt_targets}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/_d
+    WORKING_DIRECTORY ${_debug_build_dir}
     USES_TERMINAL
   )
 

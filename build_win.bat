@@ -66,7 +66,11 @@ SET PS_CHOICE_TIMEOUT=30
 SET PS_CUSTOM_RUN_FILE=custom_run.bat
 SET PS_DEPS_PATH_FILE_NAME=.DEPS_PATH.txt
 SET PS_DEPS_PATH_FILE=%~dp0deps\build\%PS_DEPS_PATH_FILE_NAME%
-SET PS_CONFIG_LIST="Debug;MinSizeRel;Release;RelWithDebInfo"
+IF "%PS_CONFIG_TYPES%" EQU "" (
+    SET PS_CONFIG_LIST="Debug;MinSizeRel;Release;RelWithDebInfo"
+) ELSE (
+    SET PS_CONFIG_LIST="%PS_CONFIG_TYPES%"
+)
 
 REM Update this script for new versions by setting PS_VERSION_SUPPORTED to a
 REM new minimum version and setting PS_VERSION_EXCEEDED to the maximum supported
@@ -175,6 +179,9 @@ IF NOT EXIST "%MSVC_DIR%" (
 )
 REM Cmake always defaults to latest supported MSVC generator. Let's make sure it uses what we select.
 FOR /F "tokens=* USEBACKQ" %%I IN (`^""%VSWHERE%" %MSVC_FILTER% -nologo -property catalog_productLineVersion^"`) DO SET PS_PRODUCT_VERSION=%%I
+REM Visual Studio 18 reports its numeric product line through vswhere, while
+REM CMake names the generator with the release year.
+IF "%PS_VERSION%" EQU "18" SET PS_PRODUCT_VERSION=2026
 
 REM Give the user a chance to cancel if we found something odd.
 IF "%PS_ASK_TO_CONTINUE%" EQU "" GOTO :BUILD_ENV
@@ -196,6 +203,9 @@ SET PS_CURRENT_STEP=environment
 @ECHO ** Using Microsoft Visual Studio installation found at:
 @ECHO **  %MSVC_DIR%
 SET CMAKE_GENERATOR=Visual Studio %PS_VERSION% %PS_PRODUCT_VERSION%
+REM CMake otherwise selects the ARM64 host platform on Windows on ARM even
+REM when build_win was asked to produce the supported x64 application.
+SET CMAKE_GENERATOR_PLATFORM=%PS_ARCH%
 CALL "%MSVC_DIR%\Common7\Tools\vsdevcmd.bat" -arch=%PS_ARCH% -host_arch=%PS_ARCH_HOST% -app_platform=Desktop
 IF %ERRORLEVEL% NEQ 0 GOTO :END
 REM Need to reset the echo state after vsdevcmd.bat clobbers it.
@@ -215,9 +225,10 @@ IF "%PS_STEPS_DIRTY%" EQU "" (
     CALL :MAKE_OR_CLEAN_DIRECTORY "%PS_DESTDIR%"
 )
 cd deps\build || GOTO :END
-cmake.exe .. -DDESTDIR="%PS_DESTDIR%"
+IF "%PS_DEP_DEBUG%" EQU "" SET "PS_DEP_DEBUG=ON"
+cmake.exe .. -DDESTDIR="%PS_DESTDIR%" -DDEP_DEBUG=%PS_DEP_DEBUG%
 IF %ERRORLEVEL% NEQ 0 IF "%PS_STEPS_DIRTY%" NEQ "" (
-    (del CMakeCache.txt && cmake.exe .. -DDESTDIR="%PS_DESTDIR%") || GOTO :END
+    (del CMakeCache.txt && cmake.exe .. -DDESTDIR="%PS_DESTDIR%" -DDEP_DEBUG=%PS_DEP_DEBUG%) || GOTO :END
 ) ELSE GOTO :END
 (echo %PS_DESTDIR%)> "%PS_DEPS_PATH_FILE%"
 msbuild /m ALL_BUILD.vcxproj /p:Configuration=%PS_CONFIG% /v:quiet %PS_PRIORITY% || GOTO :END
@@ -238,9 +249,9 @@ SET PS_PROJECT_IS_OPEN=
 FOR /F "tokens=2 delims=," %%I in (
     'tasklist /V /FI "IMAGENAME eq devenv.exe " /NH /FO CSV ^| find "%PS_SOLUTION_NAME%"'
 ) do SET PS_PROJECT_IS_OPEN=%%~I
-cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST%
+cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST% -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 IF %ERRORLEVEL% NEQ 0 IF "%PS_STEPS_DIRTY%" NEQ "" (
-    (del CMakeCache.txt && cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST%) || GOTO :END
+    (del CMakeCache.txt && cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST% -DCMAKE_POLICY_VERSION_MINIMUM=3.5) || GOTO :END
 ) ELSE GOTO :END
 REM Skip the build step if we're using the undocumented app-cmake to regenerate the full config from inside devenv
 IF "%PS_STEPS%" NEQ "app-cmake" msbuild /m ALL_BUILD.vcxproj /p:Configuration=%PS_CONFIG% /v:quiet %PS_PRIORITY% || GOTO :END
@@ -284,12 +295,12 @@ IF "%PS_RUN%" EQU "console" (
         @ECHO Preparing to run Visual Studio...
         cd ..\.. || GOTO :END
         REM This hack generates a single config for MSVS, guaranteeing it gets set as the active config.
-        cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG% > nul 2> nul || GOTO :END
+        cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG% -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > nul 2> nul || GOTO :END
         REM Now launch devenv with the single config (setting it active) and a /command switch to re-run cmake and generate the full config list
         start devenv.exe %PS_SOLUTION_NAME%.sln /command ^"shell /o ^^^"%~f0^^^" -d ^^^"%PS_DESTDIR%^^^" -c %PS_CONFIG% -a %PS_ARCH% -r none -s app-cmake^"
         REM If devenv fails to launch just directly regenerate the full config list.
         IF %ERRORLEVEL% NEQ 0 (
-            cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST% 2> nul 1> nul || GOTO :END
+            cmake.exe .. -DCMAKE_PREFIX_PATH="%PS_DESTDIR%\usr\local" -DCMAKE_CONFIGURATION_TYPES=%PS_CONFIG_LIST% -DCMAKE_POLICY_VERSION_MINIMUM=3.5 2> nul 1> nul || GOTO :END
         )
     )
 )

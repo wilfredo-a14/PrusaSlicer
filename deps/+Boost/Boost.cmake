@@ -1,6 +1,7 @@
 
 set(_context_abi_line "")
 set(_context_arch_line "")
+set(_context_assembler_line "")
 if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     if (CMAKE_OSX_ARCHITECTURES MATCHES "x86")
         set(_context_abi_line "-DBOOST_CONTEXT_ABI:STRING=sysv")
@@ -8,6 +9,12 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
         set (_context_abi_line "-DBOOST_CONTEXT_ABI:STRING=aapcs")
     endif ()
     set(_context_arch_line "-DBOOST_CONTEXT_ARCHITECTURE:STRING=${CMAKE_OSX_ARCHITECTURES}")
+elseif (MSVC AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^[Aa][Rr][Mm]64$" AND
+        CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
+    # Boost 1.83 detects the ARM64 host instead of Visual Studio's x64 target.
+    set(_context_abi_line "-DBOOST_CONTEXT_ABI:STRING=ms")
+    set(_context_arch_line "-DBOOST_CONTEXT_ARCHITECTURE:STRING=x86_64")
+    set(_context_assembler_line "-DBOOST_CONTEXT_ASSEMBLER:STRING=masm")
 endif ()
 
 add_cmake_project(Boost
@@ -21,6 +28,7 @@ add_cmake_project(Boost
         -DBOOST_IOSTREAMS_ENABLE_ZSTD:BOOL=OFF
         "${_context_abi_line}"
         "${_context_arch_line}"
+        "${_context_assembler_line}"
 )
 
 set(DEP_Boost_DEPENDS ZLIB)
