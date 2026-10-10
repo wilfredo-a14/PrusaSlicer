@@ -17,6 +17,7 @@
 #include "PrinterCore.hpp"
 
 #include <wx/app.h>
+#include <wx/aui/aui.h>
 #include <wx/button.h>
 #include <wx/checkbox.h>
 #include <wx/colour.h>
@@ -73,9 +74,11 @@ constexpr int PREVIEW_HEIGHT = 280;
 constexpr int EXPANDED_PREVIEW_WIDTH = 560;
 constexpr int EXPANDED_PREVIEW_HEIGHT = 420;
 constexpr int SETTING_FIELD_WIDTH = 100;
-constexpr int SETTING_PATH_WIDTH = 280;
+constexpr int SETTING_PATH_MIN_WIDTH = 480;
 constexpr const char *PRINT_PANEL_CONFIG_SECTION = "dlp_print_panel";
 constexpr const char *PUMP_HEIGHT_AUTOMATIC_KEY = "PUMP_HEIGHT_AUTOMATIC";
+constexpr const char *PRINT_PANEL_LAYOUT_SECTION = "dlp_print_panel_layout";
+constexpr const char *PRINT_PANEL_LAYOUT_KEY = "perspective_v1";
 
 boost::filesystem::path printer_config_directory()
 {
@@ -1052,6 +1055,7 @@ class DLPPrintPanel::Impl
 public:
     explicit Impl(DLPPrintPanel *owner)
         : owner_(owner)
+        , aui_manager_(owner)
         , projection_([this] { request_pause("Exposure paused with Escape"); },
                       [this](const std::string &line) {
                           wxTheApp->CallAfter([this, line] { append_log(line); });
@@ -1060,19 +1064,25 @@ public:
                       [this] { return pause_.load(); })
     {
         const pp::Settings defaults = pp::default_settings();
-        root_sizer_ = new wxBoxSizer(wxVERTICAL);
-        settings_notebook_ = new wxNotebook(owner_, wxID_ANY);
+        controls_pane_ = new wxPanel(owner_);
+        settings_pane_ = new wxPanel(owner_);
+        log_pane_ = new wxPanel(owner_);
+        preview_pane_ = new wxPanel(owner_);
+        motion_pane_ = new wxPanel(owner_);
+
+        settings_notebook_ = new wxNotebook(settings_pane_, wxID_ANY);
         auto *print_settings_page = new wxPanel(settings_notebook_);
         auto *stage_controls_page = new wxPanel(settings_notebook_);
         settings_notebook_->AddPage(print_settings_page, _L("Print Settings"), true);
         settings_notebook_->AddPage(stage_controls_page, _L("Stage Controls"));
         auto *path_sizer = new wxFlexGridSizer(2, 6, 8);
+        path_sizer->AddGrowableCol(1, 1);
         path_sizer_ = path_sizer;
         config_sizer_ = new wxFlexGridSizer(4, 6, 10);
         image_dir_ = new wxDirPickerCtrl(print_settings_page, wxID_ANY,
                                          wxString::FromUTF8(defaults.image_directory.string()));
-        constrain_width(image_dir_, SETTING_PATH_WIDTH);
-        stage_port_ = text(defaults.stage_port, SETTING_PATH_WIDTH, print_settings_page);
+        image_dir_->SetMinSize(wxSize(SETTING_PATH_MIN_WIDTH, -1));
+        stage_port_ = text(defaults.stage_port, SETTING_PATH_MIN_WIDTH, print_settings_page, false);
         display_index_ = spin(defaults.display_index, -1, 16, print_settings_page);
         return_height_ = number(defaults.home_position_mm, print_settings_page);
         max_height_ = number(defaults.max_height_mm, print_settings_page);
@@ -1152,8 +1162,8 @@ public:
         stage_controls_sizer->AddStretchSpacer();
         stage_controls_page->SetSizer(stage_controls_sizer);
 
-        add_row(path_sizer, "Layer image directory", image_dir_);
-        add_row(path_sizer, "SMC100CC serial port", stage_port_);
+        add_expandable_row(path_sizer, "Layer image directory", image_dir_);
+        add_expandable_row(path_sizer, "SMC100CC serial port", stage_port_);
         add_pair(config_sizer_, "Projector display (-1 = auto)", display_index_,
                  "Return height (mm)", return_height_);
         add_pair(config_sizer_, "Printer height / maximum (mm)", max_height_,
@@ -1174,30 +1184,35 @@ public:
                  "Layer scaling", scale_);
         config_separator_ = new wxStaticLine(print_settings_page);
         auto *print_settings_sizer = new wxBoxSizer(wxVERTICAL);
-        print_settings_sizer->Add(path_sizer, 0, wxALL, 10);
+        print_settings_sizer->Add(path_sizer, 0, wxEXPAND | wxALL, 10);
         print_settings_sizer->Add(config_sizer_, 0, wxLEFT | wxRIGHT | wxBOTTOM, 10);
         print_settings_sizer->Add(config_separator_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
         print_settings_page->SetSizer(print_settings_sizer);
 
-        progress_label_ = new wxStaticText(owner_, wxID_ANY,
+        progress_label_ = new wxStaticText(controls_pane_, wxID_ANY,
             _L("Validate the plan to see layer count and time estimate"));
         wxFont progress_font = progress_label_->GetFont();
         progress_font.SetWeight(wxFONTWEIGHT_BOLD);
         progress_font.SetPointSize(progress_font.GetPointSize() + 2);
         progress_label_->SetFont(progress_font);
-        progress_bar_ = new ProgressBarPanel(owner_);
-        root_sizer_->Add(progress_label_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
-        root_sizer_->Add(progress_bar_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
+        progress_bar_ = new ProgressBarPanel(controls_pane_);
+        auto *controls_sizer = new wxBoxSizer(wxVERTICAL);
+        controls_sizer->Add(progress_label_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 12);
+        controls_sizer->Add(progress_bar_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 8);
 
         auto *buttons = new wxBoxSizer(wxHORIZONTAL);
-        plan_ = new wxButton(owner_, wxID_ANY, _L("Validate & Move to Start"));
+        plan_ = new wxButton(controls_pane_, wxID_ANY, _L("Validate & Move to Start"));
         plan_->SetToolTip(_L("Validate the print plan, then move the referenced stage directly to the automatic start height."));
-        start_ = new wxButton(owner_, wxID_ANY, _L("Start Print"));
-        led_off_ = new wxButton(owner_, wxID_ANY, _L("LED Off"));
+        start_ = new wxButton(controls_pane_, wxID_ANY, _L("Start Print"));
+        led_off_ = new wxButton(controls_pane_, wxID_ANY, _L("LED Off"));
         led_off_->SetToolTip(_L("Set all DLPC900 LED current channels to zero and verify the light engine is off."));
-        stop_ = new wxButton(owner_, wxID_ANY, _L("STOP"));
-        continue_ = new wxButton(owner_, wxID_ANY, _L("Continue"));
-        quit_ = new wxButton(owner_, wxID_ANY, _L("Quit"));
+        stop_ = new wxButton(controls_pane_, wxID_ANY, _L("STOP"));
+        continue_ = new wxButton(controls_pane_, wxID_ANY, _L("Continue"));
+        quit_ = new wxButton(controls_pane_, wxID_ANY, _L("Quit"));
+        save_layout_ = new wxButton(controls_pane_, wxID_ANY, _L("Save Layout"));
+        save_layout_->SetToolTip(_L("Save the current printer-window arrangement for future sessions."));
+        reset_layout_ = new wxButton(controls_pane_, wxID_ANY, _L("Reset Layout"));
+        reset_layout_->SetToolTip(_L("Restore the default arrangement of the draggable print-panel sections."));
         stop_->Disable();
         continue_->Hide();
         buttons->Add(plan_, 0, wxRIGHT, 8);
@@ -1205,37 +1220,43 @@ public:
         buttons->Add(led_off_, 0, wxRIGHT, 8);
         buttons->Add(continue_, 0, wxRIGHT, 8);
         buttons->Add(quit_, 0, wxRIGHT, 8);
+        buttons->Add(save_layout_, 0, wxRIGHT, 8);
+        buttons->Add(reset_layout_, 0, wxRIGHT, 8);
         buttons->AddStretchSpacer();
         buttons->Add(stop_);
-        root_sizer_->Add(buttons, 0, wxEXPAND | wxALL, 12);
+        controls_sizer->Add(buttons, 0, wxEXPAND | wxALL, 12);
+        controls_pane_->SetSizer(controls_sizer);
 
-        log_ = new wxTextCtrl(owner_, wxID_ANY, "", wxDefaultPosition, wxDefaultSize,
-                              wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
-        auto *preview = new wxStaticBoxSizer(wxVERTICAL, owner_, _L("Current slice"));
+        log_ = new wxTextCtrl(log_pane_, wxID_ANY, "", wxDefaultPosition, wxDefaultSize,
+                               wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
+        auto *log_sizer = new wxBoxSizer(wxVERTICAL);
+        log_sizer->Add(log_, 1, wxEXPAND | wxALL, 4);
+        log_pane_->SetSizer(log_sizer);
+
+        auto *preview = new wxStaticBoxSizer(wxVERTICAL, preview_pane_, _L("Current slice"));
         preview_bitmap_ = new wxStaticBitmap(preview->GetStaticBox(), wxID_ANY, wxNullBitmap,
                                              wxDefaultPosition, wxSize(PREVIEW_WIDTH, PREVIEW_HEIGHT));
         preview_bitmap_->SetMinSize(wxSize(PREVIEW_WIDTH, PREVIEW_HEIGHT));
         preview_label_ = new wxStaticText(preview->GetStaticBox(), wxID_ANY, _L("Waiting for first slice"));
         preview->Add(preview_bitmap_, 0, wxALIGN_CENTER | wxALL, 6);
         preview->Add(preview_label_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
+        auto *preview_sizer = new wxBoxSizer(wxVERTICAL);
+        preview_sizer->Add(preview, 1, wxEXPAND | wxALL, 4);
+        preview_pane_->SetSizer(preview_sizer);
 
-        auto *live = new wxBoxSizer(wxVERTICAL);
-        settings_sizer_ = new wxBoxSizer(wxVERTICAL);
-        settings_sizer_->Add(settings_notebook_, 1, wxEXPAND);
-        live->Add(settings_sizer_, 0, wxEXPAND | wxBOTTOM, 8);
-        live->Add(log_, 1, wxEXPAND | wxBOTTOM, 8);
-        live->Add(preview, 1, wxEXPAND);
+        auto *settings_sizer = new wxBoxSizer(wxVERTICAL);
+        settings_sizer->Add(settings_notebook_, 1, wxEXPAND);
+        settings_pane_->SetSizer(settings_sizer);
 
-        auto *motion_box = new wxStaticBoxSizer(wxVERTICAL, owner_, _L("Stage height"));
+        auto *motion_box = new wxStaticBoxSizer(wxVERTICAL, motion_pane_, _L("Stage height"));
         motion_graph_ = new MotionGraphPanel(motion_box->GetStaticBox());
         motion_graph_->SetMinSize(wxSize(520, -1));
         motion_box->Add(motion_graph_, 1, wxEXPAND | wxALL, 4);
+        auto *motion_sizer = new wxBoxSizer(wxVERTICAL);
+        motion_sizer->Add(motion_box, 1, wxEXPAND | wxALL, 4);
+        motion_pane_->SetSizer(motion_sizer);
 
-        auto *body = new wxBoxSizer(wxHORIZONTAL);
-        body->Add(live, 2, wxEXPAND | wxRIGHT, 8);
-        body->Add(motion_box, 3, wxEXPAND);
-        root_sizer_->Add(body, 1, wxEXPAND | wxALL, 12);
-        owner_->SetSizer(root_sizer_);
+        configure_dockable_layout();
         clear_preview();
         motion_graph_->reset(0.0, defaults.max_height_mm, defaults.layer_height_mm);
 
@@ -1271,6 +1292,8 @@ public:
         stop_->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { request_pause("Stop requested by operator"); });
         continue_->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { request_continue(); });
         quit_->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { request_quit(); });
+        save_layout_->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { persist_dockable_layout(true); });
+        reset_layout_->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) { reset_dockable_layout(); });
         progress_timer_ = std::make_unique<wxTimer>(owner_);
         owner_->Bind(wxEVT_TIMER, [this](wxTimerEvent &) {
             if (running_ && !pause_.load())
@@ -1281,7 +1304,12 @@ public:
         append_log("Print panel ready. Review settings, validate the plan, then start the print.");
     }
 
-    ~Impl() { shutdown(); }
+    ~Impl()
+    {
+        shutdown();
+        persist_dockable_layout();
+        aui_manager_.UnInit();
+    }
 
     bool is_running() const { return running_; }
 
@@ -1325,13 +1353,120 @@ public:
     }
 
 private:
+    static wxSize required_pane_size(wxWindow *pane, const wxSize &minimum)
+    {
+        wxSize required = minimum;
+        if (pane != nullptr && pane->GetSizer() != nullptr) {
+            const wxSize content = pane->GetSizer()->GetMinSize();
+            required.SetWidth(std::max(required.GetWidth(), content.GetWidth()));
+            required.SetHeight(std::max(required.GetHeight(), content.GetHeight()));
+        }
+        return required;
+    }
+
+    void apply_pane_size_constraints()
+    {
+        const auto apply = [this](wxWindow *pane, const wxSize &minimum) {
+            const wxSize required = required_pane_size(pane, minimum);
+            pane->SetMinSize(required);
+            aui_manager_.GetPane(pane).MinSize(required);
+        };
+
+        apply(controls_pane_, wxSize(760, 200));
+        apply(settings_pane_, wxSize(720, 360));
+        apply(preview_pane_, wxSize(380, 350));
+        apply(log_pane_, wxSize(360, 140));
+        apply(motion_pane_, wxSize(540, 300));
+    }
+
+    void configure_dockable_layout()
+    {
+        aui_manager_.SetFlags(wxAUI_MGR_DEFAULT | wxAUI_MGR_LIVE_RESIZE);
+        aui_manager_.AddPane(controls_pane_,
+            wxAuiPaneInfo().Name("print_controls").Caption(_L("Print controls — drag to move"))
+                .Top().Layer(0).Position(0).BestSize(900, 225).MinSize(760, 200)
+                .Dockable().Movable().Floatable().Resizable().CloseButton(false).MaximizeButton(true));
+        aui_manager_.AddPane(settings_pane_,
+            wxAuiPaneInfo().Name("print_settings").Caption(_L("Settings — drag to move"))
+                .Left().Layer(1).Position(0).BestSize(800, 430).MinSize(720, 360)
+                .Dockable().Movable().Floatable().Resizable().CloseButton(false).MaximizeButton(true));
+        aui_manager_.AddPane(preview_pane_,
+            wxAuiPaneInfo().Name("slice_preview").Caption(_L("Slice preview — drag to move"))
+                .Right().Layer(1).Position(0).BestSize(420, 390).MinSize(380, 350)
+                .Dockable().Movable().Floatable().Resizable().CloseButton(false).MaximizeButton(true));
+        aui_manager_.AddPane(log_pane_,
+            wxAuiPaneInfo().Name("print_log").Caption(_L("Activity log — drag to move"))
+                .Bottom().Layer(1).Position(0).BestSize(700, 190).MinSize(360, 140)
+                .Dockable().Movable().Floatable().Resizable().CloseButton(false).MaximizeButton(true));
+        aui_manager_.AddPane(motion_pane_,
+            wxAuiPaneInfo().Name("stage_height").Caption(_L("Stage height — drag to move"))
+                .Center().Layer(0).Position(0).BestSize(660, 520).MinSize(540, 300)
+                .Dockable().Movable().Floatable().Resizable().CloseButton(false).MaximizeButton(true));
+
+        apply_pane_size_constraints();
+        default_layout_perspective_ = aui_manager_.SavePerspective();
+        if (wxTheApp != nullptr && wxGetApp().app_config != nullptr) {
+            const std::string saved = wxGetApp().app_config->get(
+                PRINT_PANEL_LAYOUT_SECTION, PRINT_PANEL_LAYOUT_KEY);
+            if (!saved.empty() &&
+                !aui_manager_.LoadPerspective(wxString::FromUTF8(saved), true))
+                aui_manager_.LoadPerspective(default_layout_perspective_, true);
+        }
+        // Loading a perspective also loads its historical pane minimums. Reapply
+        // the current content-aware constraints so older layouts cannot clip UI.
+        apply_pane_size_constraints();
+        aui_manager_.Update();
+        saved_layout_perspective_ = layout_perspective_for_storage();
+    }
+
+    std::string layout_perspective_for_storage()
+    {
+        wxAuiPaneInfo &settings = aui_manager_.GetPane(settings_pane_);
+        const bool settings_was_shown = settings.IsShown();
+        settings.Show(true);
+        const std::string perspective = aui_manager_.SavePerspective().ToStdString();
+        settings.Show(settings_was_shown);
+        return perspective;
+    }
+
+    void persist_dockable_layout(bool announce = false)
+    {
+        if (wxTheApp == nullptr || wxGetApp().app_config == nullptr) {
+            if (announce)
+                show_error(owner_, _L("PrusaSlicer layout storage is unavailable."));
+            return;
+        }
+        const std::string perspective = layout_perspective_for_storage();
+        if (perspective != saved_layout_perspective_) {
+            saved_layout_perspective_ = perspective;
+            wxGetApp().app_config->set(
+                PRINT_PANEL_LAYOUT_SECTION, PRINT_PANEL_LAYOUT_KEY, perspective);
+            wxGetApp().app_config->save();
+        }
+        if (announce)
+            append_log("Printer window layout saved.");
+    }
+
+    void reset_dockable_layout()
+    {
+        aui_manager_.LoadPerspective(default_layout_perspective_, true);
+        apply_pane_size_constraints();
+        aui_manager_.GetPane(settings_pane_).Show(!running_);
+        aui_manager_.Update();
+        persist_dockable_layout();
+        append_log("Print panel layout restored to defaults.");
+    }
+
     wxTextCtrl *text(const std::string &value, int width = SETTING_FIELD_WIDTH,
-                     wxWindow *parent = nullptr)
+                     wxWindow *parent = nullptr, bool fixed_width = true)
     {
         auto *control = new wxTextCtrl(parent == nullptr ? owner_ : parent, wxID_ANY,
                                        wxString::FromUTF8(value),
                                        wxDefaultPosition, wxSize(width, -1));
-        constrain_width(control, width);
+        if (fixed_width)
+            constrain_width(control, width);
+        else
+            control->SetMinSize(wxSize(width, -1));
         return control;
     }
     wxTextCtrl *number(double value, wxWindow *parent = nullptr, int width = SETTING_FIELD_WIDTH)
@@ -1361,6 +1496,11 @@ private:
     {
         form->Add(new wxStaticText(control->GetParent(), wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
         form->Add(control, 0, wxALIGN_CENTER_VERTICAL);
+    }
+    static void add_expandable_row(wxFlexGridSizer *form, const char *label, wxWindow *control)
+    {
+        form->Add(new wxStaticText(control->GetParent(), wxID_ANY, label), 0, wxALIGN_CENTER_VERTICAL);
+        form->Add(control, 1, wxEXPAND);
     }
     static void add_pair(wxFlexGridSizer *form, const char *left_label, wxWindow *left,
                          const char *right_label, wxWindow *right)
@@ -1990,11 +2130,11 @@ private:
         continue_->Enable(paused);
         quit_->Show(!running || paused);
         quit_->Enable(!adjusting && !controlling_led && (!running || paused));
-        settings_notebook_->Show(!running);
+        aui_manager_.GetPane(settings_pane_).Show(!running);
         set_preview_expanded(running);
         progress_bar_->set_paused(paused);
         motion_graph_->set_paused(paused);
-        root_sizer_->Layout();
+        aui_manager_.Update();
         owner_->Layout();
     }
 
@@ -2130,18 +2270,20 @@ private:
     wxButton *plan_ {}, *start_ {}, *led_off_ {}, *adjust_stage_ {}, *relative_stage_ {};
     wxButton *jog_down_10_ {}, *jog_up_10_ {};
     wxButton *send_home_ {}, *read_position_ {}, *stage_stop_ {};
-    wxButton *stop_ {}, *continue_ {}, *quit_ {};
+    wxButton *stop_ {}, *continue_ {}, *quit_ {}, *save_layout_ {}, *reset_layout_ {};
     ProgressBarPanel *progress_bar_ {};
     wxStaticText *progress_label_ {};
     MotionGraphPanel *motion_graph_ {};
     wxStaticBitmap *preview_bitmap_ {};
     wxStaticText *preview_label_ {}, *current_height_ {}, *automatic_start_height_ {};
     wxNotebook *settings_notebook_ {};
-    wxBoxSizer *root_sizer_ {};
-    wxBoxSizer *settings_sizer_ {};
+    wxPanel *controls_pane_ {}, *settings_pane_ {}, *log_pane_ {}, *preview_pane_ {}, *motion_pane_ {};
     wxFlexGridSizer *path_sizer_ {};
     wxFlexGridSizer *config_sizer_ {};
     wxStaticLine *config_separator_ {};
+    wxAuiManager aui_manager_;
+    wxString default_layout_perspective_;
+    std::string saved_layout_perspective_;
     int preview_width_ { PREVIEW_WIDTH };
     int preview_height_ { PREVIEW_HEIGHT };
     std::filesystem::path preview_path_;

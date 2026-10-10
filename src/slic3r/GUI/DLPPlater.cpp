@@ -807,8 +807,10 @@ bool prepare_dlp_print(wxWindow *parent, SLAPrint &sla_print)
     wxGetApp().app_config->set("dlp_last_slice_directory", path);
     wxGetApp().app_config->save();
     sla_print.set_png_export_dir(path);
+#ifdef CLIP3D_NATIVE_AIRPRINT
     remember_native_dlp_sliced_layer_height(
         sla_print.default_object_config().layer_height.value);
+#endif
     dlp::debug_log("GUI DLP print: export directory selected; starting slice and PNG export");
     BOOST_LOG_TRIVIAL(info) << "DLP print: PNG export directory set to " << path;
     return true;
