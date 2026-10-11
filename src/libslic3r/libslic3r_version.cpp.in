@@ -1,0 +1,15 @@
+#include "libslic3r_version.h"
+
+namespace Slic3r {
+
+const char* version_string() noexcept
+{
+    return "@SLIC3R_VERSION@";
+}
+
+const char* build_id_string() noexcept
+{
+    return "@SLIC3R_BUILD_ID@";
+}
+
+} // namespace Slic3r

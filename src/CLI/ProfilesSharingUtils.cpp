@@ -24,9 +24,9 @@ static bool load_preset_bundle_from_datadir(PresetBundle& preset_bundle)
     }
 
     if (std::string error = app_config.load(); !error.empty()) {
-        BOOST_LOG_TRIVIAL(error) << Slic3r::format("Error parsing PrusaSlicer config file, it is probably corrupted. "
+        BOOST_LOG_TRIVIAL(error) << Slic3r::format("Error parsing %1% config file, it is probably corrupted. "
             "Try to manually delete the file to recover from the error. Your user profiles will not be affected."
-            "\n%1%\n%2%", app_config.config_path(), error);
+            "\n%2%\n%3%", SLIC3R_APP_NAME, app_config.config_path(), error);
         return false;
     }
 

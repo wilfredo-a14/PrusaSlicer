@@ -8,6 +8,7 @@
 #include <libslic3r/TriangleMeshSlicer.hpp>
 #include <libslic3r/SLA/SupportTreeMesher.hpp>
 #include <libslic3r/BranchingTree/PointCloud.hpp>
+#include <libslic3r/Model.hpp>
 
 namespace {
 
@@ -30,6 +31,56 @@ const char *const SUPPORT_TEST_MODELS[] = {
 };
 
 } // namespace
+
+TEST_CASE("SLA slice grid uses fixed increments without a partial final layer", "[sla_print][slice_grid]")
+{
+    constexpr double layer_height         = 0.3;
+    constexpr double initial_layer_height = 0.3;
+    constexpr double model_height         = 19.84;
+    constexpr double expected_last_slice  = 19.8;
+
+    Model model;
+    ModelObject *object = model.add_object();
+    object->name = "grounded cube";
+    object->add_instance();
+    object->add_volume(make_cube(1., 1., model_height));
+
+    SLAFullPrintConfig full_config;
+    full_config.printer_technology.setInt(ptSLA);
+    full_config.set("supports_enable", false);
+    full_config.set("pad_enable", false);
+    full_config.set("layer_height", layer_height);
+    full_config.set("initial_layer_height", initial_layer_height);
+
+    DynamicPrintConfig config;
+    config.apply(full_config);
+
+    SLAPrint print;
+    print.set_status_callback([](const PrintBase::SlicingStatus &) {});
+    print.apply(model, config);
+    print.process();
+
+    REQUIRE(print.objects().size() == 1);
+    const auto &slice_index = print.objects().front()->get_slice_index();
+    REQUIRE(slice_index.size() > 1);
+
+    CHECK(slice_index[0].print_level() == scaled(initial_layer_height));
+    CHECK(slice_index[0].slice_level() == Approx(0.).margin(std::numeric_limits<float>::epsilon()));
+    CHECK_FALSE(slice_index[0].get_slice(soModel).empty());
+    CHECK(slice_index[1].print_level() == scaled(initial_layer_height + layer_height));
+    CHECK(slice_index[1].slice_level() == Approx(initial_layer_height));
+    REQUIRE(slice_index.size() == 67);
+    CHECK(unscaled<double>(slice_index.back().print_level()) ==
+          Approx(expected_last_slice + layer_height).margin(1e-5));
+    CHECK(slice_index.back().slice_level() == Approx(expected_last_slice).margin(1e-6));
+    CHECK(slice_index.back().slice_level() < model_height);
+    CHECK(slice_index.back().layer_height() == Approx(layer_height).margin(1e-6));
+    CHECK_FALSE(slice_index.back().get_slice(soModel).empty());
+
+    for (size_t index = 2; index < slice_index.size(); ++index)
+        CHECK(slice_index[index].slice_level() - slice_index[index - 1].slice_level() ==
+              Approx(layer_height).margin(1e-6));
+}
 
 TEST_CASE("Flat pad geometry is valid", "[SLASupportGeneration]") {
     sla::PadConfig padcfg;

@@ -3,6 +3,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "DLPAirPrintLaunch.hpp"
+#include "libslic3r.h"
 
 #include <boost/filesystem.hpp>
 
@@ -35,7 +36,7 @@ AirPrintCommand plan_airprint_command(
     const fs::path printer(printer_directory);
     const fs::path script = printer / "airprint.py";
     if (printer_directory.empty() || !fs::is_regular_file(script)) {
-        command.error = "Could not locate printer/airprint.py. Start PrusaSlicer with this repository's launcher.";
+        command.error = std::string("Could not locate printer/airprint.py. Start ") + SLIC3R_APP_NAME + " with this repository's launcher.";
         return command;
     }
 

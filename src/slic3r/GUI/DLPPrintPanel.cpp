@@ -1671,7 +1671,7 @@ private:
                         minimum_dark));
             }
             if (wxTheApp == nullptr || wxGetApp().app_config == nullptr)
-                throw std::runtime_error("PrusaSlicer settings storage is unavailable");
+                throw std::runtime_error(std::string(SLIC3R_APP_NAME) + " settings storage is unavailable");
 
             PrinterConfig saved {
                 { "STAGE_PORT", into_u8(stage_port_->GetValue()) },

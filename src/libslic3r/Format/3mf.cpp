@@ -2244,8 +2244,16 @@ namespace Slic3r {
         } else if (m_curr_metadata_name == "Application") {
             // Generator application of the 3MF.
             // SLIC3R_APP_KEY - SLIC3R_VERSION
-            if (boost::starts_with(m_curr_characters, "PrusaSlicer-"))
-                m_prusaslicer_generator_version = Semver::parse(m_curr_characters.substr(12));
+            const std::array<std::string, 2> application_prefixes {
+                std::string(SLIC3R_APP_KEY) + "-",
+                std::string(SLIC3R_APP_NAME) + "-"
+            };
+            for (const std::string &prefix : application_prefixes) {
+                if (boost::starts_with(m_curr_characters, prefix)) {
+                    m_prusaslicer_generator_version = Semver::parse(m_curr_characters.substr(prefix.size()));
+                    break;
+                }
+            }
         } else if (m_curr_metadata_name == SLIC3RPE_FDM_SUPPORTS_PAINTING_VERSION) {
             m_fdm_supports_painting_version = (unsigned int) atoi(m_curr_characters.c_str());
             check_painting_version(m_fdm_supports_painting_version, FDM_SUPPORTS_PAINTING_VERSION,
@@ -3972,7 +3980,7 @@ std::pair<bool, std::optional<Semver>> is_project_3mf(const std::string& filenam
                     memset(buffer, 0, sizeof(buffer));
                     if (size_t bytes_read = mz_zip_reader_extract_iter_read(iter, buffer, sizeof(buffer)); bytes_read > 0) {
                         std::string header(buffer);
-                        boost::regex pattern(R"(^\s*<metadata name="Application".*?PrusaSlicer-(.*?)</metadata>$)");
+                        boost::regex pattern(R"(^\s*<metadata name="Application".*?(?:PrusaSlicer|DeSimoneLab printing)-(.*?)</metadata>$)");
                         boost::sregex_iterator it(header.begin(), header.end(), pattern);
                         boost::sregex_iterator end;
                         if (it != end) {

@@ -248,9 +248,17 @@ public:
         m_display->activate();
 
         m_layers = std::make_shared<ConfigOptionsGroup>(
-            parent, _L("Layer settings"), &presets->sla_prints.get_edited_preset().config);
-        m_layers->append_single_option_line("layer_height");
+            parent, _L("Layer settings"), &m_layer_display_config);
+        sync_layer_height_display();
+        Option layer_height_option = m_layers->get_option("layer_height");
+        layer_height_option.opt.sidetext = L("µm");
+        layer_height_option.opt.tooltip = L(
+            "This setting controls the slice spacing in microns. Thinner layers give better accuracy but take more time to print.");
+        m_layers->append_single_option_line(layer_height_option);
         m_layers->on_change = [this](t_config_option_key, boost::any) {
+            DynamicPrintConfig& config =
+                wxGetApp().preset_bundle->sla_prints.get_edited_preset().config;
+            config.set("layer_height", m_layer_display_config.opt_float("layer_height") / 1000.0);
             apply_change(Preset::TYPE_SLA_PRINT);
             update_slice_count();
         };
@@ -283,8 +291,9 @@ public:
     {
         PresetBundle* presets = wxGetApp().preset_bundle;
         sync_bed_shape();
+        sync_layer_height_display();
         m_display->set_config(&presets->printers.get_edited_preset().config);
-        m_layers->set_config(&presets->sla_prints.get_edited_preset().config);
+        m_layers->set_config(&m_layer_display_config);
         m_display->reload_config();
         m_layers->reload_config();
         update_slice_count();
@@ -306,8 +315,14 @@ public:
                 std::isfinite(layer_height) && layer_height > 0.0) {
                 // Exported layers are rebased to the STL's bottom, so changing
                 // object Z does not add black padding images.
-                const auto slices = static_cast<unsigned long long>(
-                    std::floor(object_height / layer_height + 1e-9));
+                const double initial_layer_height = wxGetApp().preset_bundle->sla_materials
+                    .get_edited_preset().config.opt_float("initial_layer_height");
+                unsigned long long slices = 1;
+                if (std::isfinite(initial_layer_height) && initial_layer_height > 0.0 &&
+                    object_height + 1e-9 >= initial_layer_height) {
+                    slices += 1 + static_cast<unsigned long long>(
+                        std::floor((object_height - initial_layer_height) / layer_height + 1e-9));
+                }
                 value = wxString::Format("%llu", slices);
             }
         }
@@ -329,6 +344,15 @@ public:
     }
 
 private:
+    void sync_layer_height_display()
+    {
+        const DynamicPrintConfig& config =
+            wxGetApp().preset_bundle->sla_prints.get_edited_preset().config;
+        m_layer_display_config.clear();
+        m_layer_display_config.set_key_value(
+            "layer_height", new ConfigOptionFloat(config.opt_float("layer_height") * 1000.0));
+    }
+
     static void apply_change(Preset::Type preset_type)
     {
         if (preset_type == Preset::TYPE_PRINTER)
@@ -361,6 +385,7 @@ private:
     wxSizer* m_sizer { nullptr };
     Plater* m_plater { nullptr };
     wxStaticText* m_slice_count { nullptr };
+    DynamicPrintConfig m_layer_display_config;
     std::shared_ptr<ConfigOptionsGroup> m_display;
     std::shared_ptr<ConfigOptionsGroup> m_layers;
 };

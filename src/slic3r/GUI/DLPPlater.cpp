@@ -351,7 +351,7 @@ bool save_printer_config(const PrinterConfig &updates, std::string &error)
 {
     const boost::filesystem::path config_directory = printer_config_directory();
     if (config_directory.empty()) {
-        error = "Could not locate printer/config.py. Start PrusaSlicer with this repository's launcher for your operating system.";
+        error = std::string("Could not locate printer/config.py. Start ") + SLIC3R_APP_NAME + " with this repository's launcher for your operating system.";
         return false;
     }
 
@@ -701,7 +701,7 @@ private:
 {
     const boost::filesystem::path printer_dir = printer_config_directory();
     if (printer_dir.empty()) {
-        error = "Could not locate printer/airprint.py. Start PrusaSlicer with this repository's launcher for your operating system.";
+        error = std::string("Could not locate printer/airprint.py. Start ") + SLIC3R_APP_NAME + " with this repository's launcher for your operating system.";
         return false;
     }
 

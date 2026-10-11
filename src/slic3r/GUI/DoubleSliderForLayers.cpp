@@ -1134,7 +1134,8 @@ std::string DSForLayers::get_label(int pos, LabelType label_type, const std::str
     if (label_type == ltHeight)
         return str;
     if (label_type == ltHeightWithLayer) {
-        size_t layer_number = m_ticks.is_wipe_tower ? get_layer_number(value, label_type) + 1 : (m_values.empty() ? value : value + 1);
+        const size_t layer_number = m_draw_mode == dmSlaPrint ? value :
+            (m_ticks.is_wipe_tower ? get_layer_number(value, label_type) + 1 : value + 1);
         return format("%1%\n(%2%)", str, layer_number);
     }    
 

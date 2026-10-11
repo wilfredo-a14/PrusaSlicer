@@ -180,7 +180,8 @@ Http::priv::priv(const std::string &url)
 	set_timeout_connect(DEFAULT_TIMEOUT_CONNECT);
     set_timeout_max(DEFAULT_TIMEOUT_MAX);
 	::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());   // curl makes a copy internally
-	::curl_easy_setopt(curl, CURLOPT_USERAGENT, SLIC3R_APP_NAME "/" SLIC3R_VERSION);
+	static const std::string user_agent = std::string(SLIC3R_APP_NAME) + "/" + SLIC3R_VERSION;
+	::curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
 	::curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, &error_buffer.front());
 	::curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 }

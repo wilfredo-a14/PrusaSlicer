@@ -597,13 +597,28 @@ void SLAPrint::Steps::slice_model(SLAPrintObject &po)
 
     po.m_slice_index.clear();
 
-    size_t cap = size_t(1 + (maxZs - minZs - ilhs) / lhs);
+    size_t cap = 1;
+    if (minZs + ilhs <= maxZs)
+        cap += size_t((maxZs - minZs - ilhs) / lhs) + 1;
     po.m_slice_index.reserve(cap);
 
-    po.m_slice_index.emplace_back(minZs + ilhs, minZf + ilh / 2.f, ilh);
+    // Sample each printable layer at its lower boundary. The print level still
+    // identifies the top of the layer, but the first geometric slice must start
+    // at the model's ground level instead of skipping into the model. Move the
+    // first sample by one floating-point step so a coplanar bottom face produces
+    // its outline instead of an empty slice.
+    const float first_slice_z = std::nextafter(minZf, std::numeric_limits<float>::infinity());
+    po.m_slice_index.emplace_back(minZs + ilhs, first_slice_z, ilh);
 
-    for(coord_t h = minZs + ilhs + lhs; h <= maxZs; h += lhs)
-        po.m_slice_index.emplace_back(h, unscaled<float>(h) - lh / 2.f, lh);
+    // Continue on the configured layer grid and stop at the highest regular
+    // slice position that does not exceed the model. Never stretch or shorten
+    // the last layer merely to make its position coincide with the STL top.
+    for (coord_t slice_z = minZs + ilhs; slice_z <= maxZs; slice_z += lhs) {
+        float geometric_slice_z = unscaled<float>(slice_z);
+        if (slice_z == maxZs)
+            geometric_slice_z = std::nextafter(float(maxZ), -std::numeric_limits<float>::infinity());
+        po.m_slice_index.emplace_back(slice_z + lhs, geometric_slice_z, lh);
+    }
 
     // Just get the first record that is from the model:
     auto slindex_it =

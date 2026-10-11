@@ -3,7 +3,17 @@
 
 #define SLIC3R_APP_NAME "@SLIC3R_APP_NAME@"
 #define SLIC3R_APP_KEY "@SLIC3R_APP_KEY@"
-#define SLIC3R_VERSION "@SLIC3R_VERSION@"
-#define SLIC3R_BUILD_ID "@SLIC3R_BUILD_ID@"
+
+namespace Slic3r {
+
+// Kept out of this widely included header so a version-only change does not
+// invalidate the precompiled headers and rebuild the entire application.
+const char* version_string() noexcept;
+const char* build_id_string() noexcept;
+
+} // namespace Slic3r
+
+#define SLIC3R_VERSION (::Slic3r::version_string())
+#define SLIC3R_BUILD_ID (::Slic3r::build_id_string())
 
 #endif /* __SLIC3R_VERSION_H */

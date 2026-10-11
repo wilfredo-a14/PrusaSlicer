@@ -11,6 +11,13 @@ project(libslic3r)
 include(PrecompiledHeader)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libslic3r_version.h.in ${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h @ONLY)
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libslic3r_version.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.cpp @ONLY)
+
+# Keep the changing version strings in their own small library. The generated
+# public header is stable when only VERSION changes, so the large libslic3r and
+# GUI precompiled headers remain valid.
+add_library(libslic3r_version STATIC ${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.cpp)
+target_include_directories(libslic3r_version PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (MINGW)
     add_compile_options(-Wa,-mbig-obj)
@@ -650,6 +657,7 @@ target_link_libraries(libslic3r PRIVATE
     nlohmann_json::nlohmann_json
 )
 target_link_libraries(libslic3r PUBLIC
+    libslic3r_version
     Eigen3::Eigen
     semver
     admesh

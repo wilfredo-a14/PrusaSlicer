@@ -9,7 +9,7 @@
   <key>CFBundleIconFile</key>
   <string>PrusaSlicer.icns</string>
   <key>CFBundleName</key>
-  <string>@SLIC3R_APP_KEY@</string>
+  <string>@SLIC3R_APP_NAME@</string>
   <key>CFBundleShortVersionString</key>
   <string>@SLIC3R_APP_NAME@ @SLIC3R_BUILD_ID@</string>
   <key>CFBundleIdentifier</key>
@@ -131,7 +131,7 @@
     <array>
       <dict>
         <key>CFBundleURLName</key>
-        <string>PrusaSlicer Downloads</string>
+        <string>@SLIC3R_APP_NAME@ Downloads</string>
         <key>CFBundleURLSchemes</key>
         <array>
           <string>prusaslicer</string>

@@ -350,17 +350,17 @@ void DesktopIntegrationDialog::perform_desktop_integration()
 
     std::string desktop_file = GUI::format(
         "[Desktop Entry]\n"
-        "Name=PrusaSlicer%1%\n"
+        "Name=%1%%2%\n"
         "GenericName=3D Printing Software\n"
-        "Icon=PrusaSlicer%2%\n"
-        "Exec=\"%3%\" %%F\n"
+        "Icon=PrusaSlicer%3%\n"
+        "Exec=\"%4%\" %%F\n"
         "Terminal=false\n"
         "Type=Application\n"
         "MimeType=model/stl;application/vnd.ms-3mfdocument;application/prs.wavefront-obj;application/x-amf;\n"
         "Categories=Graphics;3DGraphics;Engineering;\n"
         "Keywords=3D;Printing;Slicer;slice;3D;printer;convert;gcode;stl;obj;amf;SLA\n"
         "StartupNotify=false\n"
-        "StartupWMClass=prusa-slicer\n", name_suffix, version_suffix, excutable_path);
+        "StartupWMClass=prusa-slicer\n", SLIC3R_APP_NAME, name_suffix, version_suffix, excutable_path);
 
     bool candidate_found = false;
     for (size_t i = 0; i < target_candidates.size(); ++i) {
@@ -428,16 +428,16 @@ void DesktopIntegrationDialog::perform_desktop_integration()
         // Desktop file
         std::string desktop_file_viewer = GUI::format(
             "[Desktop Entry]\n"
-            "Name=Prusa Gcode Viewer%1%\n"
+            "Name=%1%%2%\n"
             "GenericName=3D Printing Software\n"
-            "Icon=PrusaSlicer-gcodeviewer%2%\n"
-            "Exec=\"%3%\" --gcodeviewer %%F\n"
+            "Icon=PrusaSlicer-gcodeviewer%3%\n"
+            "Exec=\"%4%\" --gcodeviewer %%F\n"
             "Terminal=false\n"
             "Type=Application\n"
             "MimeType=text/x.gcode;\n"
             "Categories=Graphics;3DGraphics;\n"
             "Keywords=3D;Printing;Slicer;\n"
-            "StartupNotify=false\n", name_suffix, version_suffix, excutable_path);
+            "StartupNotify=false\n", GCODEVIEWER_APP_NAME, name_suffix, version_suffix, excutable_path);
         std::string desktop_path = GUI::format("%1%/applications/PrusaSlicerGcodeViewer%2%.desktop", target_dir_desktop, version_suffix);
         if (create_desktop_file(desktop_path, desktop_file_viewer))
             // save path to desktop file
@@ -558,14 +558,14 @@ void DesktopIntegrationDialog::perform_downloader_desktop_integration()
 
     std::string desktop_file_downloader = GUI::format(
         "[Desktop Entry]\n"
-        "Name=PrusaSlicer URL Protocol%1%\n"
-        "Exec=\"%2%\" --single-instance %%u\n"
+        "Name=%1% URL Protocol%2%\n"
+        "Exec=\"%3%\" --single-instance %%u\n"
         "Terminal=false\n"
         "Type=Application\n"
         "MimeType=x-scheme-handler/prusaslicer;\n"
         "StartupNotify=false\n"
         "NoDisplay=true\n"
-        , name_suffix, excutable_path);
+        , SLIC3R_APP_NAME, name_suffix, excutable_path);
 
     // desktop file for downloader as part of main app
     std::string desktop_path = GUI::format("%1%/applications/PrusaSlicerURLProtocol%2%.desktop", target_dir_desktop, version_suffix);

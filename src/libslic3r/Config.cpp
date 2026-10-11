@@ -915,7 +915,7 @@ ConfigSubstitutions ConfigBase::load_from_gcode_file(const std::string &filename
             }
         }
         if (! header_found)
-            throw Slic3r::RuntimeError("Not a PrusaSlicer / Slic3r PE generated g-code.");
+            throw Slic3r::RuntimeError(std::string("Not a ") + SLIC3R_APP_NAME + " / Slic3r PE generated G-code.");
     }
 
     auto                      header_end_pos = ifs.tellg();

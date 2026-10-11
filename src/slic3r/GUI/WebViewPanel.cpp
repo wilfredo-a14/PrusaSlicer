@@ -1562,7 +1562,7 @@ void PrintablesWebViewPanel::show_download_notification(const std::string& filen
         const notifDiv = document.createElement('div');
         notifDiv.innerHTML = `
                     <div>
-                    <b>PrusaSlicer: </b>${decodeURIComponent('%1%')}
+                    <b>%3%: </b>${decodeURIComponent('%1%')}
                     <br>${decodeURIComponent('%2%')}
                     </div>
                 `;
@@ -1573,7 +1573,7 @@ void PrintablesWebViewPanel::show_download_notification(const std::string& filen
         window.setTimeout(removeNotification, 5000);
     }
         appendNotification();
-    )", message_filename, message_dest);
+    )", message_filename, message_dest, SLIC3R_APP_NAME);
     run_script(script);
 }
 

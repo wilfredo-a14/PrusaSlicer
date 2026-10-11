@@ -597,7 +597,7 @@ wxString sla_wildcards(const char *formatid, const std::string& custom_extension
     return ret;
 }
 
-static std::string libslic3r_translate_callback(const char *s) { return wxGetTranslation(wxString(s, wxConvUTF8)).utf8_str().data(); }
+static std::string libslic3r_translate_callback(const char *s) { return I18N::translate_utf8(s); }
 
 #ifdef WIN32
 #if !wxVERSION_EQUAL_OR_GREATER_THAN(3,1,3)
@@ -939,9 +939,9 @@ void GUI_App::init_app_config()
         if (!error.empty()) {
             // Error while parsing config file. We'll customize the error message and rethrow to be displayed.
             if (is_editor()) {
-                throw Slic3r::RuntimeError(format("Error parsing PrusaSlicer config file, it is probably corrupted. "
+                throw Slic3r::RuntimeError(format("Error parsing %1% config file, it is probably corrupted. "
                         "Try to manually delete the file to recover from the error. Your user profiles will not be affected."
-                        "\n\n%1%\n\n%2%", app_config->config_path(), error));
+                        "\n\n%2%\n\n%3%", SLIC3R_APP_NAME, app_config->config_path(), error));
             }
             else {
                 throw Slic3r::RuntimeError(format("Error parsing PrusaGCodeViewer config file, it is probably corrupted. "
@@ -1191,9 +1191,9 @@ std::string GUI_App::check_older_app_config(Semver current_version, bool backup)
         if (!error.empty()) {
             // Error while parsing config file. We'll customize the error message and rethrow to be displayed.
             if (is_editor()) {
-                throw Slic3r::RuntimeError(format("Error parsing PrusaSlicer config file, it is probably corrupted. "
+                throw Slic3r::RuntimeError(format("Error parsing %1% config file, it is probably corrupted. "
                         "Try to manually delete the file to recover from the error. Your user profiles will not be affected."
-                        "\n\n%1%\n\n%2%", app_config->config_path(), error));
+                        "\n\n%2%\n\n%3%", SLIC3R_APP_NAME, app_config->config_path(), error));
             }
             else {
                 throw Slic3r::RuntimeError(format("Error parsing PrusaGCodeViewer config file, it is probably corrupted. "
@@ -1344,7 +1344,7 @@ bool GUI_App::on_init_inner()
                 "\n32 bit build of PrusaSlicer will likely not be able to utilize all the RAM available in the system."
                 "\nPlease download and install a 64 bit build of PrusaSlicer from https://www.prusa3d.cz/prusaslicer/."
                 "\nDo you wish to continue?"),
-            "PrusaSlicer", wxICON_QUESTION | wxYES_NO);
+            SLIC3R_APP_NAME, wxICON_QUESTION | wxYES_NO);
         if (dlg.ShowModal() != wxID_YES)
             return false;
     }
@@ -1427,7 +1427,7 @@ bool GUI_App::on_init_inner()
             RichMessageDialog
                 dlg(nullptr,
                     wxString::Format(_L("%s\nDo you want to continue?"), msg),
-                    "PrusaSlicer", wxICON_QUESTION | wxYES_NO);
+                    SLIC3R_APP_NAME, wxICON_QUESTION | wxYES_NO);
             dlg.ShowCheckBox(_L("Remember my choice"));
             if (dlg.ShowModal() != wxID_YES) return false;
 
@@ -2580,14 +2580,14 @@ bool GUI_App::load_language(wxString language, bool initial)
 
     if (! wxLocale::IsAvailable(language_info->Language)) {
     	// Loading the language dictionary failed.
-    	wxString message = "Switching PrusaSlicer to language " + language_info->CanonicalName + " failed.";
+	    wxString message = wxString(SLIC3R_APP_NAME) + " could not switch to language " + language_info->CanonicalName + ".";
 #if !defined(_WIN32) && !defined(__APPLE__)
         // likely some linux system
         message += "\nYou may need to reconfigure the missing locales, likely by running the \"locale-gen\" and \"dpkg-reconfigure locales\" commands.\n";
 #endif
         if (initial)
         	message + "\n\nApplication will close.";
-        wxMessageBox(message, "PrusaSlicer - Switching language failed", wxOK | wxICON_ERROR);
+        wxMessageBox(message, wxString(SLIC3R_APP_NAME) + " - Switching language failed", wxOK | wxICON_ERROR);
         if (initial)
 			std::exit(EXIT_FAILURE);
 		else
@@ -3612,22 +3612,22 @@ bool GUI_App::open_login_browser_with_dialog(const wxString& url, wxWindow* pare
 #ifdef __WXMSW__
 void GUI_App::associate_3mf_files()
 {
-    associate_file_type(L".3mf", L"Prusa.Slicer.1", L"PrusaSlicer", true);
+    associate_file_type(L".3mf", L"Prusa.Slicer.1", boost::nowide::widen(SLIC3R_APP_NAME), true);
 }
 
 void GUI_App::associate_stl_files()
 {
-    associate_file_type(L".stl", L"Prusa.Slicer.1", L"PrusaSlicer", true);
+    associate_file_type(L".stl", L"Prusa.Slicer.1", boost::nowide::widen(SLIC3R_APP_NAME), true);
 }
 
 void GUI_App::associate_gcode_files()
 {
-    associate_file_type(L".gcode", L"PrusaSlicer.GCodeViewer.1", L"PrusaSlicerGCodeViewer", true);
+    associate_file_type(L".gcode", L"PrusaSlicer.GCodeViewer.1", boost::nowide::widen(GCODEVIEWER_APP_NAME), true);
 }
 
 void GUI_App::associate_bgcode_files()
 {
-    associate_file_type(L".bgcode", L"PrusaSlicer.GCodeViewer.1", L"PrusaSlicerGCodeViewer", true);
+    associate_file_type(L".bgcode", L"PrusaSlicer.GCodeViewer.1", boost::nowide::widen(GCODEVIEWER_APP_NAME), true);
 }
 #endif // __WXMSW__
 
