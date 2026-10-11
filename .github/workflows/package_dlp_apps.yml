@@ -1,0 +1,141 @@
+name: Package DLP-Slicer for Windows and macOS
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Both jobs package the same semantic version for a workflow run. The run
+# number makes every automatic package distinguishable without changing either
+# version.txt file in the ephemeral runner checkout.
+env:
+  DLP_SLICER_VERSION: 0.1.${{ github.run_number }}
+
+jobs:
+  package-windows:
+    name: Windows x64 package
+    runs-on: windows-2025
+    timeout-minutes: 360
+
+    steps:
+      - name: Require private repository token
+        shell: pwsh
+        env:
+          PACKAGING_REPOSITORY_TOKEN: ${{ secrets.PACKAGING_REPOSITORY_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PACKAGING_REPOSITORY_TOKEN)) {
+              throw 'Add the PACKAGING_REPOSITORY_TOKEN Actions secret before running this workflow.'
+          }
+
+      - name: Check out private packaging repository
+        uses: actions/checkout@v7
+        with:
+          repository: wilfredo-a14/3DPrinter
+          ref: main
+          path: .
+          token: ${{ secrets.PACKAGING_REPOSITORY_TOKEN }}
+          persist-credentials: false
+
+      - name: Check out the triggering PrusaSlicer commit
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: Slicing/prusaslicer
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify source commit
+        shell: pwsh
+        run: |
+          $actualCommit = git -C Slicing/prusaslicer rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actualCommit -ne '${{ github.sha }}') {
+              throw "Expected PrusaSlicer commit ${{ github.sha }}, found $actualCommit"
+          }
+
+      - name: Build and package Windows
+        shell: pwsh
+        run: |
+          & .\packaging\windows\make_zip.bat
+          if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+          }
+
+      - name: Upload Windows ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          name: DLP-Slicer-Windows-x64-${{ github.run_number }}
+          path: packaging/windows/dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  package-macos:
+    name: macOS Apple Silicon package
+    runs-on: macos-15
+    timeout-minutes: 360
+
+    steps:
+      - name: Require private repository token
+        shell: bash
+        env:
+          PACKAGING_REPOSITORY_TOKEN: ${{ secrets.PACKAGING_REPOSITORY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PACKAGING_REPOSITORY_TOKEN" ]]; then
+            echo 'Add the PACKAGING_REPOSITORY_TOKEN Actions secret before running this workflow.' >&2
+            exit 1
+          fi
+
+      - name: Check out private packaging repository
+        uses: actions/checkout@v7
+        with:
+          repository: wilfredo-a14/3DPrinter
+          ref: main
+          path: .
+          token: ${{ secrets.PACKAGING_REPOSITORY_TOKEN }}
+          persist-credentials: false
+
+      - name: Check out the triggering PrusaSlicer commit
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: Slicing/prusaslicer
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_commit="$(git -C Slicing/prusaslicer rev-parse HEAD)"
+          if [[ "$actual_commit" != "${{ github.sha }}" ]]; then
+            echo "Expected PrusaSlicer commit ${{ github.sha }}, found $actual_commit" >&2
+            exit 1
+          fi
+
+      - name: Install macOS build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install automake cmake git gettext libtool texinfo m4 zlib
+
+      - name: Build and package macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./packaging/macos/make_dmg.sh
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: DLP-Slicer-macOS-arm64-${{ github.run_number }}
+          path: packaging/macos/dist/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
